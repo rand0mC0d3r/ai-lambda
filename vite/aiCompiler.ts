@@ -3,10 +3,11 @@ import path from 'node:path';
 import ts from 'typescript';
 import type { Plugin } from 'vite';
 import { inferSchema } from './comparator/inferSchema.ts';
-import { generateComparator } from './openai/generateComparator.ts';
+import { aiFunctionSpecs } from './aiFunctions.ts';
+import { generateAiFunction } from './openai/generateAiFunction.ts';
 import type { AIConfig } from './types.ts';
 
-function isSortAiCall(
+function isAiCall(
   node: ts.Node
 ): node is ts.CallExpression & {
   expression: ts.PropertyAccessExpression;
@@ -14,7 +15,7 @@ function isSortAiCall(
   return (
     ts.isCallExpression(node) &&
     ts.isPropertyAccessExpression(node.expression) &&
-    node.expression.name.text === 'sortAi'
+    Object.hasOwn(aiFunctionSpecs, node.expression.name.text)
   );
 }
 
@@ -96,20 +97,20 @@ export function aiCompiler(): Plugin {
         true
       );
 
-      let hasSortAiCall = false;
+      let hasAiCall = false;
 
-      function findSortAiCall(node: ts.Node): void {
-        if (isSortAiCall(node)) {
-          hasSortAiCall = true;
+      function findAiCall(node: ts.Node): void {
+        if (isAiCall(node)) {
+          hasAiCall = true;
           return;
         }
 
-        ts.forEachChild(node, findSortAiCall);
+        ts.forEachChild(node, findAiCall);
       }
 
-      findSortAiCall(ast);
+      findAiCall(ast);
 
-      if (!hasSortAiCall) return null;
+      if (!hasAiCall) return null;
 
       const compilerHost = ts.createCompilerHost(tsconfig.options);
       const getSourceFile = compilerHost.getSourceFile.bind(compilerHost);
@@ -147,7 +148,7 @@ export function aiCompiler(): Plugin {
       );
 
       if (!programSource) {
-        throw new Error(`Unable to type-check sortAi() in ${id}`);
+        throw new Error(`Unable to type-check AI call in ${id}`);
       }
 
       const checker = program.getTypeChecker();
@@ -158,7 +159,8 @@ export function aiCompiler(): Plugin {
       }[] = [];
 
       async function visit(node: ts.Node): Promise<void> {
-        if (isSortAiCall(node)) {
+        if (isAiCall(node)) {
+          const spec = aiFunctionSpecs[node.expression.name.text];
           const instructionNode = node.arguments[0];
           const items = node.expression.expression;
 
@@ -168,33 +170,28 @@ export function aiCompiler(): Plugin {
             node.arguments.length !== 1
           ) {
             throw new Error(
-              `Invalid sortAi() invocation in ${id}`
+              `Invalid ${spec.method}() invocation in ${id}`
             );
           }
 
-          const schema = inferSchema(checker, items);
+          const schema = inferSchema(checker, items, spec.method);
 
-          const comparator = await generateComparator(
+          const generated = await generateAiFunction(
             config,
             root,
+            spec,
             instructionNode.text,
             schema
           );
 
-          const receiver = items.getText(ast);
-          const isPostfixReceiver =
-            ts.isIdentifier(items) ||
-            ts.isPropertyAccessExpression(items) ||
-            ts.isElementAccessExpression(items) ||
-            ts.isCallExpression(items) ||
-            ts.isParenthesizedExpression(items);
-
+          // Only the method tail is replaced so nested AI calls in the receiver stay intact.
           replacements.push({
-            start: node.getStart(ast),
+            start: items.end,
             end: node.end,
-            value: `${isPostfixReceiver ? receiver : `(${receiver})`}.toSorted(${comparator})`
+            value: `.${spec.replacementMethod}(${generated})`
           });
 
+          await visit(items);
           return;
         }
 

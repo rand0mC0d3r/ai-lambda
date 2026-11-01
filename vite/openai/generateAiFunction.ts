@@ -1,13 +1,15 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { validateComparator } from '../comparator/validateComparator.ts';
+import type { AIFunctionSpec } from '../aiFunctions.ts';
+import { validateAiFunction } from '../comparator/validateAiFunction.ts';
 import type { AIConfig } from '../types.ts';
 import { hash, isRecord } from '../utils.ts';
 import { extractGeneratedText } from './extractGeneratedText.ts';
 
-export async function generateComparator(
+export async function generateAiFunction(
   config: AIConfig,
   root: string,
+  spec: AIFunctionSpec,
   instruction: string,
   schema: Record<string, string>
 ): Promise<string> {
@@ -15,7 +17,9 @@ export async function generateComparator(
     instruction,
     schema,
     model: config.model,
-    compilerVersion: 1
+    compilerVersion: 1,
+    // Sort keys stay unchanged so comparators cached before filterAi existed remain valid.
+    ...(spec.kind === 'sort' ? {} : { kind: spec.kind })
   }));
 
   const cacheDir = path.resolve(root, config.generatedDir);
@@ -35,16 +39,20 @@ export async function generateComparator(
     if (cached !== undefined) {
       const parsed: unknown = JSON.parse(cached);
 
-      if (!isRecord(parsed) || typeof parsed.comparator !== 'string') {
-        throw new Error('Invalid cached comparator');
+      const cachedFunction = isRecord(parsed)
+        ? parsed[spec.outputField]
+        : undefined;
+
+      if (typeof cachedFunction !== 'string') {
+        throw new Error(`Invalid cached ${spec.role}`);
       }
 
-      validateComparator(parsed.comparator, schema);
-      return parsed.comparator;
+      validateAiFunction(cachedFunction, schema, spec);
+      return cachedFunction;
     }
   }
 
-  console.log(`\n🤖 AI compiling: "${instruction}"`);
+  console.log(`\n🤖 AI compiling ${spec.method}(): "${instruction}"`);
 
   const response = await fetch(
     'https://api.openai.com/v1/responses',
@@ -57,42 +65,33 @@ export async function generateComparator(
       body: JSON.stringify({
         model: config.model,
         instructions: `
-You are a JavaScript comparator compiler.
+You are a JavaScript ${spec.role} compiler.
 
 Generate a single JavaScript arrow function:
-(a, b) => ...
+${spec.signature}
 
 Rules:
-- Return a negative number when a comes first.
-- Return zero when equivalent.
-- Return a positive number when b comes first.
-- Only access fields defined in the supplied schema.
-- Use arithmetic for numeric comparisons.
-- Use localeCompare with numeric:true and sensitivity:"base"
-  for natural string sorting.
-- No external dependencies.
-- No mutations.
-- No additional variables or statements.
+${spec.rules.map((rule) => `- ${rule}`).join('\n')}
 - Output JavaScript code only inside the JSON field.
         `,
         input: JSON.stringify({
           instruction,
           schema,
-          availableVariables: ['a', 'b']
+          availableVariables: spec.parameters
         }),
         text: {
           format: {
             type: 'json_schema',
-            name: 'sort_comparator',
+            name: spec.schemaName,
             strict: true,
             schema: {
               type: 'object',
               properties: {
-                comparator: {
+                [spec.outputField]: {
                   type: 'string'
                 }
               },
-              required: ['comparator'],
+              required: [spec.outputField],
               additionalProperties: false
             }
           }
@@ -114,29 +113,33 @@ Rules:
   try {
     parsed = JSON.parse(output);
   } catch (error) {
-    throw new Error('OpenAI returned invalid comparator JSON', {
+    throw new Error(`OpenAI returned invalid ${spec.role} JSON`, {
       cause: error
     });
   }
 
-  if (!isRecord(parsed) || typeof parsed.comparator !== 'string') {
-    throw new Error('OpenAI response is missing a comparator string');
+  const generated = isRecord(parsed)
+    ? parsed[spec.outputField]
+    : undefined;
+
+  if (typeof generated !== 'string') {
+    throw new Error(
+      `OpenAI response is missing a ${spec.role} string`
+    );
   }
 
-  const comparator = parsed.comparator;
-
-  validateComparator(comparator, schema);
+  validateAiFunction(generated, schema, spec);
 
   if (config.cache) {
     await mkdir(cacheDir, { recursive: true });
 
     await writeFile(
       cacheFile,
-      JSON.stringify({ comparator }, null, 2)
+      JSON.stringify({ [spec.outputField]: generated }, null, 2)
     );
   }
 
-  console.log(`✅ Generated: ${comparator}`);
+  console.log(`✅ Generated: ${generated}`);
 
-  return comparator;
+  return generated;
 }

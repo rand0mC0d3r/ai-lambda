@@ -1,12 +1,14 @@
 import ts from 'typescript';
+import type { AIFunctionSpec } from '../aiFunctions.ts';
 
-export function validateComparator(
+export function validateAiFunction(
   code: string,
-  schema: Record<string, string>
+  schema: Record<string, string>,
+  spec: AIFunctionSpec
 ) {
   const source = ts.createSourceFile(
     'generated.ts',
-    `const __comparator = ${code};`,
+    `const __generated = ${code};`,
     ts.ScriptTarget.ESNext,
     true
   );
@@ -18,7 +20,7 @@ export function validateComparator(
   const declaration = source.statements[0];
 
   if (!ts.isVariableStatement(declaration)) {
-    throw new Error('Invalid comparator declaration');
+    throw new Error('Invalid generated function declaration');
   }
 
   const initializer =
@@ -27,21 +29,25 @@ export function validateComparator(
   if (
     !initializer ||
     !ts.isArrowFunction(initializer) ||
-    initializer.parameters.length !== 2 ||
-    !ts.isIdentifier(initializer.parameters[0].name) ||
-    !ts.isIdentifier(initializer.parameters[1].name) ||
-    initializer.parameters[0].name.text !== 'a' ||
-    initializer.parameters[1].name.text !== 'b' ||
+    initializer.parameters.length !== spec.parameters.length ||
+    initializer.parameters.some(
+      (parameter, index) =>
+        !ts.isIdentifier(parameter.name) ||
+        parameter.name.text !== spec.parameters[index]
+    ) ||
     ts.isBlock(initializer.body)
   ) {
     throw new Error(
-      'Comparator must be an expression-bodied (a, b) arrow function'
+      `Generated function must be an expression-bodied (${spec.parameters.join(', ')}) arrow function`
     );
   }
 
   const allowed = new Set([
-    'a', 'b', 'undefined',
-    'localeCompare', 'numeric', 'sensitivity',
+    ...spec.parameters,
+    'undefined',
+    'numeric',
+    'sensitivity',
+    ...spec.allowedMethods,
     ...Object.keys(schema)
   ]);
 
@@ -57,12 +63,12 @@ export function validateComparator(
 
       const isField =
         ts.isIdentifier(node.expression) &&
-        ['a', 'b'].includes(node.expression.text) &&
+        spec.parameters.includes(node.expression.text) &&
         Object.hasOwn(schema, property);
 
-      const isLocaleCompare = property === 'localeCompare';
+      const isAllowedMethod = spec.allowedMethods.includes(property);
 
-      if (!isField && !isLocaleCompare) {
+      if (!isField && !isAllowedMethod) {
         throw new Error(`Forbidden property access: ${property}`);
       }
     }
@@ -70,9 +76,11 @@ export function validateComparator(
     if (ts.isCallExpression(node)) {
       if (
         !ts.isPropertyAccessExpression(node.expression) ||
-        node.expression.name.text !== 'localeCompare'
+        !spec.allowedMethods.includes(node.expression.name.text)
       ) {
-        throw new Error('Only localeCompare calls are permitted');
+        throw new Error(
+          `Only ${spec.allowedMethods.join(', ')} calls are permitted`
+        );
       }
     }
 

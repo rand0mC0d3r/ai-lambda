@@ -2,13 +2,14 @@ import ts from 'typescript';
 
 export function inferSchema(
   checker: ts.TypeChecker,
-  items: ts.Expression
+  items: ts.Expression,
+  method: string
 ): Record<string, string> {
   const itemsType = checker.getTypeAtLocation(items);
   const itemType = checker.getElementTypeOfArrayType(itemsType);
 
   if (!itemType) {
-    throw new Error('sortAi() items must be an array');
+    throw new Error(`${method}() items must be an array`);
   }
 
   const schema: Record<string, string> = {};
@@ -41,7 +42,7 @@ export function inferSchema(
 
     if (!fieldType || fieldTypes.some((type) => type !== fieldType)) {
       throw new Error(
-        `Unsupported sortAi() field type for "${propertyName}": ${checker.typeToString(propertyType)}`
+        `Unsupported ${method}() field type for "${propertyName}": ${checker.typeToString(propertyType)}`
       );
     }
 

@@ -145,6 +145,17 @@ const pipelines = [
           ...item,
           unitPrice: Math.round(item.unitPrice * 90) / 100
         }))
+  },
+  {
+    label: 'Filter with AI, then sort',
+    run: () =>
+      cart
+        .filterAi(
+          'Keep only items that are in stock and have a unit price above 5 dollars.'
+        )
+        .sortAi(
+          'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
+        )
   }
 ];
 

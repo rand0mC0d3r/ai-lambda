@@ -48,7 +48,7 @@ export function extractGeneratedText(result: unknown): string {
   if (output.trim()) return output;
   if (refusals.length) {
     throw new Error(
-      `OpenAI refused comparator generation: ${refusals.join(' ')}`
+      `OpenAI refused AI function generation: ${refusals.join(' ')}`
     );
   }
 
