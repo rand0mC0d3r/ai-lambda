@@ -3,12 +3,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { API } from 'typescript/unstable/sync';
-import { aiFunctionSpecs } from '../src/constants.js';
-import { hash } from '../src/utils.js';
-import type { AIConfig } from '../src/types.js';
-import { generateAiFunction } from '../src/openai/generateAiFunction.js';
+import { aiFunctionSpecs } from '../../src/constants.js';
+import { hash } from '../../src/utils.js';
+import type { AIConfig } from '../../src/types.js';
+import { generateAiFunction } from '../../src/openai/generateAiFunction.js';
 
-vi.mock('../src/functions/validateAiFunction.js', () => ({
+vi.mock('../../src/functions/validateAiFunction.js', () => ({
   validateAiFunction: vi.fn()
 }));
 

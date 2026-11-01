@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractGeneratedText } from '../src/openai/extractGeneratedText.js';
+import { extractGeneratedText } from '../../src/openai/extractGeneratedText.js';
 
 describe('extractGeneratedText', () => {
   it('prefers a non-empty output_text field', () => {
