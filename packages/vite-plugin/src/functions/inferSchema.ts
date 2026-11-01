@@ -11,15 +11,16 @@ function getSimpleType(type: Type): string | undefined {
   if (type.flags & TypeFlags.StringLike) return 'string';
   if (type.flags & TypeFlags.NumberLike) return 'number';
   if (type.flags & TypeFlags.BooleanLike) return 'boolean';
-
-  if (
-    type.getSymbol()?.name === 'Date' ||
-    type.getAliasSymbol()?.name === 'Date'
-  ) {
+  if ([type.getSymbol(), type.getAliasSymbol()].some((s) => s?.name === 'Date')) {
     return 'date';
   }
-
   return undefined;
+}
+
+function getNumberIndexValueType(checker: Checker, type: Type): Type | undefined {
+  return checker.getIndexInfosOfType(type).find(
+    (index) => index.keyType.flags & TypeFlags.NumberLike
+  )?.valueType;
 }
 
 function inferFields(
@@ -31,11 +32,7 @@ function inferFields(
   const schema: Record<string, string> = {};
 
   for (const property of checker.getPropertiesOfType(type)) {
-    const propertyName = property.name;
-    const propertyType = checker.getTypeOfSymbolAtLocation(
-      property,
-      location
-    );
+    const propertyType = checker.getTypeOfSymbolAtLocation(property, location);
     const nonNullableType = checker.getNonNullableType(propertyType);
     const variants = nonNullableType?.isUnionType()
       ? nonNullableType.getTypes()
@@ -49,13 +46,13 @@ function inferFields(
       throw new Error(
         translate('unsupportedFieldType', {
           method,
-          propertyName,
+          propertyName: property.name,
           type: checker.typeToString(propertyType)
         })
       );
     }
 
-    schema[propertyName] = fieldType;
+    schema[property.name] = fieldType;
   }
 
   return schema;
@@ -67,11 +64,7 @@ export function inferSchema(
   method: string
 ): Record<string, string> {
   const itemsType = checker.getTypeAtLocation(items);
-  const numberIndex = itemsType &&
-    checker.getIndexInfosOfType(itemsType).find(
-      (index) => index.keyType.flags & TypeFlags.NumberLike
-    );
-  const itemType = numberIndex?.valueType;
+  const itemType = itemsType && getNumberIndexValueType(checker, itemsType);
 
   if (!itemType) {
     throw new Error(translate('itemsMustBeArray', { method }));
@@ -86,15 +79,9 @@ export function inferAccumulatorSchema(
   method: string,
   explicitType?: TypeNode
 ): AIFunctionParameterSchema {
-  const initialType = checker.getTypeAtLocation(
-    explicitType ?? initialValue
-  );
-
-  if (!initialType) {
-    throw new Error(translate('cannotInferInitialValueType', { method }));
-  }
-
-  const accumulatorType = checker.getNonNullableType(initialType);
+  const initialType = checker.getTypeAtLocation(explicitType ?? initialValue);
+  const accumulatorType =
+    initialType && checker.getNonNullableType(initialType);
 
   if (!accumulatorType) {
     throw new Error(translate('cannotInferInitialValueType', { method }));
@@ -106,12 +93,10 @@ export function inferAccumulatorSchema(
     return { kind: 'scalar', type: simpleType };
   }
 
-  const numberIndex = checker.getIndexInfosOfType(accumulatorType).find(
-    (index) => index.keyType.flags & TypeFlags.NumberLike
-  );
+  const numberIndexValueType = getNumberIndexValueType(checker, accumulatorType);
 
-  if (numberIndex) {
-    const elementType = checker.getNonNullableType(numberIndex.valueType);
+  if (numberIndexValueType) {
+    const elementType = checker.getNonNullableType(numberIndexValueType);
 
     if (!elementType) {
       throw new Error(translate('cannotInferArrayAccumulatorType', { method }));
@@ -123,32 +108,19 @@ export function inferAccumulatorSchema(
       return { kind: 'array', elementType: simpleElementType };
     }
 
-    const elementFields = inferFields(
-      checker,
-      elementType,
-      initialValue,
-      method
-    );
+    const elementFields = inferFields(checker, elementType, initialValue, method);
 
-    if (Object.keys(elementFields).length) {
-      return {
-        kind: 'array',
-        elementType: 'object',
-        elementFields
-      };
+    if (!Object.keys(elementFields).length) {
+      throw new Error(translate('unsupportedArrayInitialValue', { method }));
     }
 
-    throw new Error(
-      translate('unsupportedArrayInitialValue', { method })
-    );
+    return { kind: 'array', elementType: 'object', elementFields };
   }
 
   const fields = inferFields(checker, accumulatorType, initialValue, method);
 
   if (!Object.keys(fields).length) {
-    throw new Error(
-      translate('unsupportedInitialValue', { method })
-    );
+    throw new Error(translate('unsupportedInitialValue', { method }));
   }
 
   return { kind: 'object', fields };

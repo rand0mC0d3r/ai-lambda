@@ -44,6 +44,13 @@ import {
 } from 'typescript/unstable/sync';
 import { SyntaxKind } from 'typescript/unstable/ast';
 
+interface ParameterInfo {
+  kind: AIFunctionParameterSchema['kind'];
+  fields: Record<string, string>;
+  types: Record<string, string>;
+  scalarType?: string;
+}
+
 export async function validateAiFunction(
   code: string,
   schema: Record<string, string>,
@@ -71,12 +78,10 @@ export async function validateAiFunction(
       throw new Error(translate('unableToParseGeneratedFunction'));
     }
 
-    const diagnostics = project.program.getSyntacticDiagnostics(tempFile);
-
     if (
-      diagnostics.some(
-        (diagnostic) => diagnostic.category === DiagnosticCategory.Error
-      )
+      project.program
+        .getSyntacticDiagnostics(tempFile)
+        .some((diagnostic) => diagnostic.category === DiagnosticCategory.Error)
     ) {
       throw new Error(translate('invalidGeneratedSyntax'));
     }
@@ -108,49 +113,64 @@ export async function validateAiFunction(
       );
     }
 
-    const fieldsByParameter = Object.fromEntries(
-      spec.parameters.map((parameter) => [
-        parameter,
-        parameterSchemas
-          ? parameterSchemas[parameter]?.kind === 'object'
-            ? parameterSchemas[parameter].fields
-            : {}
-          : schema
-      ])
-    );
-    const parameterKinds = Object.fromEntries(
-      spec.parameters.map((parameter) => [
-        parameter,
-        parameterSchemas?.[parameter]?.kind ?? 'object'
-      ])
-    );
-    const typesByParameter = Object.fromEntries(
-      spec.parameters.map((parameter) => [
-        parameter,
-        parameterSchemas?.[parameter]?.kind === 'scalar'
-          ? {}
-          : parameterSchemas?.[parameter]?.kind === 'object'
-            ? parameterSchemas[parameter].fields
-            : parameterSchemas?.[parameter]?.kind === 'array'
-              ? parameterSchemas[parameter].elementFields ?? {}
-              : schema
-      ])
-    );
-    const scalarTypes = Object.fromEntries(
-      spec.parameters.map((parameter) => [
-        parameter,
-        parameterSchemas?.[parameter]?.kind === 'scalar'
-          ? parameterSchemas[parameter].type
-          : undefined
-      ])
+    const parameterInfo = new Map<string, ParameterInfo>(
+      spec.parameters.map((parameter): [string, ParameterInfo] => {
+        const parameterSchema = parameterSchemas?.[parameter];
+
+        return [
+          parameter,
+          {
+            kind: parameterSchema?.kind ?? 'object',
+            fields: parameterSchemas
+              ? parameterSchema?.kind === 'object' ? parameterSchema.fields : {}
+              : schema,
+            types: parameterSchema?.kind === 'scalar'
+              ? {}
+              : parameterSchema?.kind === 'object'
+                ? parameterSchema.fields
+                : parameterSchema?.kind === 'array'
+                  ? parameterSchema.elementFields ?? {}
+                  : schema,
+            scalarType: parameterSchema?.kind === 'scalar'
+              ? parameterSchema.type
+              : undefined
+          }
+        ];
+      })
     );
     const allowed = new Set([...spec.parameters, 'undefined']);
+
+    function isMathMethod(object: Node, name: string): boolean {
+      return (
+        isIdentifier(object) &&
+        object.text === 'Math' &&
+        spec.globals?.includes('Math') === true &&
+        NUMERIC_METHODS.has(name) &&
+        spec.allowedMethods.includes(name)
+      );
+    }
+
+    function isStringField(node: Node): boolean {
+      return (
+        isPropertyAccessExpression(node) &&
+        isIdentifier(node.expression) &&
+        parameterInfo.get(node.expression.text)?.types[node.name.text] === 'string'
+      );
+    }
+
+    function isStringMethod(object: Node, name: string): boolean {
+      return (
+        (name === 'localeCompare' || name === 'includes') &&
+        spec.allowedMethods.includes(name) &&
+        isStringField(object)
+      );
+    }
 
     function isNumericExpression(node: Node): boolean {
       if (node.kind === SyntaxKind.NumericLiteral) return true;
 
       if (isIdentifier(node)) {
-        return scalarTypes[node.text] === 'number';
+        return parameterInfo.get(node.text)?.scalarType === 'number';
       }
 
       if (isParenthesizedExpression(node)) {
@@ -160,18 +180,12 @@ export async function validateAiFunction(
       if (isPropertyAccessExpression(node)) {
         return (
           isIdentifier(node.expression) &&
-          typesByParameter[node.expression.text]?.[node.name.text] === 'number'
+          parameterInfo.get(node.expression.text)?.types[node.name.text] === 'number'
         );
       }
 
       if (isCallExpression(node) && isPropertyAccessExpression(node.expression)) {
-        return (
-          isIdentifier(node.expression.expression) &&
-          node.expression.expression.text === 'Math' &&
-          spec.globals?.includes('Math') === true &&
-          NUMERIC_METHODS.has(node.expression.name.text) &&
-          spec.allowedMethods.includes(node.expression.name.text)
-        );
+        return isMathMethod(node.expression.expression, node.expression.name.text);
       }
 
       if (isPrefixUnaryExpression(node)) {
@@ -200,14 +214,6 @@ export async function validateAiFunction(
       return false;
     }
 
-    function isStringField(node: Node): boolean {
-      return (
-        isPropertyAccessExpression(node) &&
-        isIdentifier(node.expression) &&
-        typesByParameter[node.expression.text]?.[node.name.text] === 'string'
-      );
-    }
-
     function isAllowedCall(node: Node): boolean {
       if (!isCallExpression(node) || !isPropertyAccessExpression(node.expression)) {
         return false;
@@ -219,20 +225,7 @@ export async function validateAiFunction(
         return false;
       }
 
-      if (
-        isIdentifier(expression) &&
-        expression.text === 'Math' &&
-        spec.globals?.includes('Math') === true
-      ) {
-        return NUMERIC_METHODS.has(name.text) &&
-          spec.allowedMethods.includes(name.text);
-      }
-
-      return (
-        (name.text === 'localeCompare' || name.text === 'includes') &&
-        spec.allowedMethods.includes(name.text) &&
-        isStringField(expression)
-      );
+      return isMathMethod(expression, name.text) || isStringMethod(expression, name.text);
     }
 
     function inspect(node: Node, parent?: Node): void {
@@ -271,7 +264,7 @@ export async function validateAiFunction(
       if (isSpreadAssignment(node)) {
         if (
           !isIdentifier(node.expression) ||
-          parameterKinds[node.expression.text] !== 'object'
+          parameterInfo.get(node.expression.text)?.kind !== 'object'
         ) {
           throw new Error(
             translate('objectSpreadNotAllowed')
@@ -282,7 +275,7 @@ export async function validateAiFunction(
       if (isSpreadElement(node)) {
         if (
           !isIdentifier(node.expression) ||
-          parameterKinds[node.expression.text] !== 'array'
+          parameterInfo.get(node.expression.text)?.kind !== 'array'
         ) {
           throw new Error(translate('arraySpreadNotAllowed'));
         }
@@ -310,26 +303,16 @@ export async function validateAiFunction(
         const isField =
           isIdentifier(node.expression) &&
           Object.hasOwn(
-            fieldsByParameter[node.expression.text] ?? {},
+            parameterInfo.get(node.expression.text)?.fields ?? {},
             property
           );
-        const isMathMethod =
-          isCallTarget &&
-          isIdentifier(node.expression) &&
-          node.expression.text === 'Math' &&
-          spec.globals?.includes('Math') === true &&
-          NUMERIC_METHODS.has(property) &&
-          spec.allowedMethods.includes(property);
-        const isStringMethod =
-          isCallTarget &&
-          (property === 'localeCompare' || property === 'includes') &&
-          spec.allowedMethods.includes(property) &&
-          isStringField(node.expression);
+        const isMath = isCallTarget && isMathMethod(node.expression, property);
+        const isString = isCallTarget && isStringMethod(node.expression, property);
 
         if (
           node.questionDotToken ||
           PROTECTED_PROPERTIES.has(property) ||
-          (!isField && !isMathMethod && !isStringMethod)
+          (!isField && !isMath && !isString)
         ) {
           throw new Error(translate('forbiddenPropertyAccess', { property }));
         }
@@ -419,8 +402,7 @@ export async function validateAiFunction(
   } finally {
     snapshot?.dispose();
     if (snapshot) {
-      const closeSnapshot = api.updateSnapshot({ closeFiles: [tempFile] });
-      closeSnapshot.dispose();
+      api.updateSnapshot({ closeFiles: [tempFile] }).dispose();
     }
     await rm(tempDir, { recursive: true, force: true });
   }
