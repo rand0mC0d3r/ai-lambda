@@ -2,10 +2,10 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import ts from 'typescript';
 import type { Plugin } from 'vite';
-import { inferSchema } from './comparator/inferSchema.ts';
-import { aiFunctionSpecs } from './aiFunctions.ts';
-import { generateAiFunction } from './openai/generateAiFunction.ts';
-import type { AIConfig } from './types.ts';
+import { inferSchema } from './comparator/inferSchema.js';
+import { aiFunctionSpecs } from './aiFunctions.js';
+import { generateAiFunction } from './openai/generateAiFunction.js';
+import type { AIConfig } from './types.js';
 
 function isAiCall(
   node: ts.Node

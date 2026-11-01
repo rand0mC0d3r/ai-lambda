@@ -1,10 +1,10 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { AIFunctionSpec } from '../aiFunctions.ts';
-import { validateAiFunction } from '../comparator/validateAiFunction.ts';
-import type { AIConfig } from '../types.ts';
-import { hash, isRecord } from '../utils.ts';
-import { extractGeneratedText } from './extractGeneratedText.ts';
+import type { AIFunctionSpec } from '../aiFunctions.js';
+import { validateAiFunction } from '../comparator/validateAiFunction.js';
+import type { AIConfig } from '../types.js';
+import { hash, isRecord } from '../utils.js';
+import { extractGeneratedText } from './extractGeneratedText.js';
 
 export async function generateAiFunction(
   config: AIConfig,

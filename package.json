@@ -1,6 +1,7 @@
 {
   "name": "ai-lambda",
   "version": "1.0.0",
+  "private": true,
   "description": "",
   "homepage": "https://github.com/rand0mC0d3r/ai-lambda#readme",
   "bugs": {
@@ -16,10 +17,16 @@
   "main": "index.js",
   "scripts": {
     "dev": "vite",
+    "predev": "npm run build --workspace vite-plugin-ai-lambda",
+    "prebuild": "npm run build --workspace vite-plugin-ai-lambda",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },
+  "workspaces": [
+    "packages/vite-plugin"
+  ],
   "devDependencies": {
+    "vite-plugin-ai-lambda": "^0.1.0",
     "typescript": "^5.9.3",
     "vite": "^8.3.5"
   }

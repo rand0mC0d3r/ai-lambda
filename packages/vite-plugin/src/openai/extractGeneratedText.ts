@@ -1,4 +1,4 @@
-import { isRecord } from '../utils.ts';
+import { isRecord } from '../utils.js';
 
 export function extractGeneratedText(result: unknown): string {
   if (!isRecord(result)) {

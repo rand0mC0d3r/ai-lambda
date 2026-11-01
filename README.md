@@ -1,6 +1,6 @@
 # 🤖 AI Lambda
 
-**AI Lambda is a Vite + TypeScript demo of compile-time, natural-language array operations.** Describe a sort, filter, or transformation in a string, and the Vite plugin asks OpenAI to generate a small JavaScript function during development or build. The generated function replaces the AI call before the app runs in the browser.
+**AI Lambda is a Vite plugin and demo of compile-time, natural-language array operations.** Describe a sort, filter, or transformation in a string, and the plugin asks OpenAI to generate a small JavaScript function during development or build. The generated function replaces the AI call before the app runs in the browser.
 
 ```ts
 const expensiveFirst = cart.sortAi(
@@ -8,7 +8,17 @@ const expensiveFirst = cart.sortAi(
 );
 ```
 
-This is a compiler experiment and example app—not a general-purpose runtime AI SDK. The browser does not call OpenAI when these operations run.
+The reusable plugin is published from [`packages/vite-plugin/`](./packages/vite-plugin/); this repository's shopping cart is an example consumer. The browser does not call OpenAI when these operations run.
+
+## 📦 Use the Vite plugin
+
+Install `vite-plugin-ai-lambda` and TypeScript in a Vite project:
+
+```sh
+npm install -D vite-plugin-ai-lambda typescript
+```
+
+Register `aiCompiler()` in `vite.config.ts` and create an `.ai-rc.json` in the project root. See the [plugin package README](./packages/vite-plugin/README.md) for the complete setup and configuration.
 
 ## ✨ What it demonstrates
 
@@ -230,9 +240,10 @@ Generated code is restricted to simple expression-bodied arrow functions and sch
 | Path | Purpose |
 |---|---|
 | [`vite.config.ts`](./vite.config.ts) | Registers the AI compiler plugin with Vite |
-| [`vite/aiCompiler.ts`](./vite/aiCompiler.ts) | Finds AI calls, infers types, and rewrites calls |
-| [`vite/openai/`](./vite/openai/) | Requests and extracts generated functions |
-| [`vite/comparator/`](./vite/comparator/) | Infers schemas and validates generated functions |
+| [`packages/vite-plugin/src/aiCompiler.ts`](./packages/vite-plugin/src/aiCompiler.ts) | Finds AI calls, infers types, and rewrites calls |
+| [`packages/vite-plugin/src/openai/`](./packages/vite-plugin/src/openai/) | Requests and extracts generated functions |
+| [`packages/vite-plugin/src/comparator/`](./packages/vite-plugin/src/comparator/) | Infers schemas and validates generated functions |
+| [`packages/vite-plugin/README.md`](./packages/vite-plugin/README.md) | Install and configure the reusable package |
 | [`src/ai-macros.d.ts`](./src/ai-macros.d.ts) | Declares the AI methods for TypeScript |
 | [`src/pipelines.ts`](./src/pipelines.ts) | Demo pipelines with AI and native array methods |
 | [`src/cart.ts`](./src/cart.ts) | Sample typed cart data |
@@ -244,7 +255,7 @@ Generated code is restricted to simple expression-bodied arrow functions and sch
 - Input schemas currently support string, number, boolean, and `Date` fields, not arbitrary nested structures.
 - Generated functions are deliberately limited; they are not general-purpose JavaScript.
 - The API key and network access are needed for generation. A browser-only runtime cannot generate missing functions.
-- This repository has no dedicated test script; `npm run build` runs the configured TypeScript check and Vite production build.
+- This repository has no dedicated test script; `npm run build` builds the plugin package, runs the configured TypeScript check, and creates the demo site.
 
 ## 📄 License
 

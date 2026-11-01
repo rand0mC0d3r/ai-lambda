@@ -6,7 +6,10 @@ export function inferSchema(
   method: string
 ): Record<string, string> {
   const itemsType = checker.getTypeAtLocation(items);
-  const itemType = checker.getElementTypeOfArrayType(itemsType);
+  const itemType = checker.getIndexTypeOfType(
+    itemsType,
+    ts.IndexKind.Number
+  );
 
   if (!itemType) {
     throw new Error(`${method}() items must be an array`);

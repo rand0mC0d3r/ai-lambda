@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import type { AIFunctionSpec } from '../aiFunctions.ts';
+import type { AIFunctionSpec } from '../aiFunctions.js';
 
 export function validateAiFunction(
   code: string,
@@ -12,8 +12,16 @@ export function validateAiFunction(
     ts.ScriptTarget.ESNext,
     true
   );
+  const diagnostics =
+    ts.transpileModule(source.text, {
+      reportDiagnostics: true
+    }).diagnostics ?? [];
 
-  if (source.parseDiagnostics.length) {
+  if (
+    diagnostics.some(
+      (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error
+    )
+  ) {
     throw new Error('Invalid generated JavaScript syntax');
   }
 
@@ -112,7 +120,6 @@ export function validateAiFunction(
       ts.SyntaxKind.ParenthesizedExpression,
       ts.SyntaxKind.PrefixUnaryExpression,
       ts.SyntaxKind.ConditionalExpression,
-      ts.SyntaxKind.Token
     ]);
 
     if (
