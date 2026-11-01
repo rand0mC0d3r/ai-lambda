@@ -36,7 +36,7 @@ The plugin uses four hooks. Blue nodes in the diagram are plugin hooks.
 | Hook | When it runs | What the plugin does |
 | --- | --- | --- |
 | `configResolved` | Once, after the Vite config is resolved | Parses the tsconfig through the TypeScript API, builds the program snapshot, reads `.ai-rc.json`, requires `apiKey`, and applies defaults (`gpt-4.1-mini`, `cache: true`, `.ai-cache`). |
-| `transform` | Once per module (build) or once per request (dev) | Rewrites `sortAi` and `reduceAi` call sites in TypeScript source files. See section 2. |
+| `transform` | Once per module (build) or once per request (dev) | Rewrites `sortAi`, `filterAi`, `mapAi`, and `reduceAi` call sites in TypeScript source files. See section 2. |
 | `closeBundle` | Once, at the end of `vite build` | Disposes the TypeScript snapshot and closes the TypeScript API. |
 | `closeWatcher` | When the dev server closes | Same cleanup as `closeBundle`. |
 
@@ -48,12 +48,12 @@ This is what happens inside the `transform` hook for each module.
 flowchart TD
     T([transform hook receives<br/>code, id]) --> U{Is the module<br/>a TS or JS file<br/>outside node_modules?}
     U -->|no| P1([return null<br/>Vite continues unchanged])
-    U -->|yes| V{Does the source contain<br/>a sortAi or reduceAi name?}
+    U -->|yes| V{Does the source contain<br/>a sortAi, filterAi, mapAi,<br/>or reduceAi name?}
     V -->|no| P1
     V -->|yes| W[Update the TypeScript<br/>snapshot with incoming code]
     W --> X{TS program text equals<br/>incoming source?}
     X -->|no| ERR1([throw: source mismatch])
-    X -->|yes| Y[Walk the AST and find<br/>sortAi / reduceAi calls]
+    X -->|yes| Y[Walk the AST and find<br/>sortAi / filterAi / mapAi /<br/>reduceAi calls]
     Y --> Z{For each call}
     Z --> AA[Build the instruction<br/>and schema from the<br/>TS type of the call]
     AA --> AB[generateAiFunction]
@@ -75,9 +75,12 @@ Notes on the flow:
 
 - Only the method tail is rewritten. The plugin replaces the text from `items.end` to `node.end`, so the rest of the file keeps its original text and layout.
 - The source map is hires, so stack traces and breakpoints still point at the original TypeScript lines.
-- Cache hits are still validated. A cached function that no longer matches the schema is treated as a miss.
+- Cache hits are still validated. A cached function that cannot be parsed or no longer matches the schema raises an error; it is not regenerated automatically. Delete the cache file to force a new generation.
+- Each call maps to a native method by its spec: `sortAi` to `toSorted`, `filterAi` to `filter`, `mapAi` to `map`, and `reduceAi` to `reduce`. The spec also sets the allowed helper methods and output role for the generated function.
 
-## 3. The `sortAi` call (sequence view)
+## 3. An AI array call (sequence view)
+
+The sequence below uses `sortAi`. The other methods follow the same path with their own spec.
 
 ```mermaid
 sequenceDiagram
@@ -93,9 +96,9 @@ sequenceDiagram
     Dev->>Vite: imports module containing sortAi(items)
     Vite->>Plugin: transform(code, id)
     Plugin->>TS: update snapshot, check text matches
-    Plugin->>Plugin: find sortAi call, derive instruction + schema
-    Plugin->>Gen: generate(instruction, schema, model)
-    Gen->>Gen: key = sha256(instruction, schema, model, compilerVersion)
+    Plugin->>Plugin: find AI call, derive instruction + schema
+    Plugin->>Gen: generate(spec, instruction, schema, model)
+    Gen->>Gen: key = sha256(instruction, schema, model, compilerVersion,<br/>kind, parameterSchemas when present)
     Gen->>Cache: read <key>.json
     alt cache hit
         Cache-->>Gen: function source
