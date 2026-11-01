@@ -37,6 +37,15 @@ export const cart: CartItem[] = [
     inStock: false
   },
   {
+    id: 5,
+    product: 'USB Cable 10 (new)',
+    category: 'Accessories',
+    quantity: 2,
+    unitPrice: 5.99,
+    addedAt: new Date('2026-10-28'),
+    inStock: true
+  },
+  {
     id: 4,
     product: 'Keyboard',
     category: 'Peripherals',
