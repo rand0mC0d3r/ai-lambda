@@ -12,6 +12,75 @@ interface AIConfig {
   generatedDir: string;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function extractGeneratedText(result: unknown): string {
+  if (!isRecord(result)) {
+    throw new Error('OpenAI returned an invalid response');
+  }
+
+  if (
+    typeof result.output_text === 'string' &&
+    result.output_text.trim()
+  ) {
+    return result.output_text;
+  }
+
+  const text: string[] = [];
+  const refusals: string[] = [];
+
+  if (Array.isArray(result.output)) {
+    for (const item of result.output) {
+      if (
+        !isRecord(item) ||
+        item.type !== 'message' ||
+        !Array.isArray(item.content)
+      ) {
+        continue;
+      }
+
+      for (const part of item.content) {
+        if (!isRecord(part)) continue;
+
+        if (
+          part.type === 'output_text' &&
+          typeof part.text === 'string'
+        ) {
+          text.push(part.text);
+        } else if (
+          part.type === 'refusal' &&
+          typeof part.refusal === 'string'
+        ) {
+          refusals.push(part.refusal);
+        }
+      }
+    }
+  }
+
+  const output = text.join('');
+
+  if (output.trim()) return output;
+  if (refusals.length) {
+    throw new Error(
+      `OpenAI refused comparator generation: ${refusals.join(' ')}`
+    );
+  }
+
+  const details = [
+    typeof result.status === 'string' && `status=${result.status}`,
+    isRecord(result.incomplete_details) &&
+      typeof result.incomplete_details.reason === 'string' &&
+      `reason=${result.incomplete_details.reason}`,
+    typeof result.id === 'string' && `response=${result.id}`
+  ].filter(Boolean);
+
+  throw new Error(
+    `OpenAI returned no generated text${details.length ? ` (${details.join(', ')})` : ''}`
+  );
+}
+
 function aiCompiler(): Plugin {
   let config: AIConfig;
   let root: string;
@@ -34,11 +103,25 @@ function aiCompiler(): Plugin {
     const cacheFile = path.join(cacheDir, `${cacheKey}.json`);
 
     if (config.cache) {
+      let cached: string | undefined;
+
       try {
-        const cached = await readFile(cacheFile, 'utf8');
-        return JSON.parse(cached).comparator;
-      } catch {
-        // Cache miss.
+        cached = await readFile(cacheFile, 'utf8');
+      } catch (error) {
+        if (!isRecord(error) || error.code !== 'ENOENT') {
+          throw error;
+        }
+      }
+
+      if (cached !== undefined) {
+        const parsed: unknown = JSON.parse(cached);
+
+        if (!isRecord(parsed) || typeof parsed.comparator !== 'string') {
+          throw new Error('Invalid cached comparator');
+        }
+
+        validateComparator(parsed.comparator, schema);
+        return parsed.comparator;
       }
     }
 
@@ -105,15 +188,23 @@ Rules:
       );
     }
 
-    const result = await response.json();
+    const result: unknown = await response.json();
+    const output = extractGeneratedText(result);
+    let parsed: unknown;
 
-    const output = result.output_text;
-
-    if (!output) {
-      throw new Error('OpenAI returned no generated code');
+    try {
+      parsed = JSON.parse(output);
+    } catch (error) {
+      throw new Error('OpenAI returned invalid comparator JSON', {
+        cause: error
+      });
     }
 
-    const { comparator } = JSON.parse(output);
+    if (!isRecord(parsed) || typeof parsed.comparator !== 'string') {
+      throw new Error('OpenAI response is missing a comparator string');
+    }
+
+    const comparator = parsed.comparator;
 
     validateComparator(comparator, schema);
 
@@ -172,7 +263,7 @@ Rules:
 
     const allowed = new Set([
       'a', 'b', 'undefined',
-      'numeric', 'sensitivity',
+      'localeCompare', 'numeric', 'sensitivity',
       ...Object.keys(schema)
     ]);
 
@@ -232,6 +323,7 @@ Rules:
 
       if (
         !permitted.has(node.kind) &&
+        !ts.isToken(node) &&
         !ts.isSourceFile(node) &&
         !ts.isVariableStatement(node) &&
         !ts.isVariableDeclarationList(node) &&
