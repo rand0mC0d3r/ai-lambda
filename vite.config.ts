@@ -172,6 +172,7 @@ Rules:
 
     const allowed = new Set([
       'a', 'b', 'undefined',
+      'numeric', 'sensitivity',
       ...Object.keys(schema)
     ]);
 

@@ -1,3 +1,5 @@
+declare module '*.css';
+
 type AISortField =
   | 'string'
   | 'number'

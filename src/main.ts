@@ -1,4 +1,6 @@
 
+import './style.css';
+
 interface CartItem {
   id: number;
   product: string;
@@ -64,3 +66,53 @@ const sortedCart = sortAi(
 );
 
 console.table(sortedCart);
+
+const tableBody = document.querySelector<HTMLTableSectionElement>(
+  '#cart tbody'
+);
+
+if (!tableBody) {
+  throw new Error('Missing shopping cart table body');
+}
+
+const currency = new Intl.NumberFormat(undefined, {
+  style: 'currency',
+  currency: 'USD'
+});
+const date = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium'
+});
+
+for (const item of sortedCart) {
+  const row = document.createElement('tr');
+  const values = [
+    { value: item.product, className: 'product' },
+    { value: item.category },
+    { value: String(item.quantity) },
+    { value: currency.format(item.unitPrice) },
+    {
+      value: currency.format(item.quantity * item.unitPrice),
+      className: 'line-total'
+    },
+    { value: date.format(item.addedAt) },
+    {
+      value: item.inStock ? 'In stock' : 'Out of stock',
+      className: item.inStock
+        ? 'availability'
+        : 'availability out-of-stock'
+    }
+  ];
+
+  for (const { value, className } of values) {
+    const cell = document.createElement('td');
+    cell.textContent = value;
+
+    if (className) {
+      cell.className = className;
+    }
+
+    row.append(cell);
+  }
+
+  tableBody.append(row);
+}
