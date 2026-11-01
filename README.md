@@ -299,7 +299,8 @@ Generated code is restricted to simple expression-bodied arrow functions and sch
 | [`vite.config.ts`](./vite.config.ts) | Registers the AI compiler plugin with Vite |
 | [`packages/vite-plugin/src/aiCompiler.ts`](./packages/vite-plugin/src/aiCompiler.ts) | Finds AI calls, infers types, and rewrites calls |
 | [`packages/vite-plugin/src/openai/`](./packages/vite-plugin/src/openai/) | Requests and extracts generated functions |
-| [`packages/vite-plugin/src/comparator/`](./packages/vite-plugin/src/comparator/) | Infers schemas and validates generated functions |
+| [`packages/vite-plugin/src/config.ts`](./packages/vite-plugin/src/config.ts) | Reads and validates `.ai-rc.json` |
+| [`packages/vite-plugin/src/functions/`](./packages/vite-plugin/src/functions/) | Infers schemas and validates generated functions |
 | [`packages/vite-plugin/README.md`](./packages/vite-plugin/README.md) | Install and configure the reusable package |
 | [`docs/images/`](./docs/images/) | GitHub-themed code examples for this README |
 | [`src/ai-macros.d.ts`](./src/ai-macros.d.ts) | Loads the plugin's TypeScript declarations and declares CSS modules |

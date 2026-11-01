@@ -35,7 +35,7 @@ The plugin uses four hooks. Blue nodes in the diagram are plugin hooks.
 
 | Hook | When it runs | What the plugin does |
 | --- | --- | --- |
-| `configResolved` | Once, after the Vite config is resolved | Parses the tsconfig through the TypeScript API, builds the program snapshot, reads `.ai-rc.json`, requires `apiKey`, and applies defaults (`gpt-4.1-mini`, `cache: true`, `.ai-cache`). |
+| `configResolved` | Once, after the Vite config is resolved | Parses the tsconfig through the TypeScript API, builds the program snapshot, then reads `.ai-rc.json` through `readAiConfig`. That step rejects non-object JSON, unknown keys, wrong value types, a missing or empty `apiKey`, and a `generatedDir` outside the Vite root. It then applies defaults (`gpt-4.1-mini`, `cache: true`, `.ai-cache`). |
 | `transform` | Once per module (build) or once per request (dev) | Rewrites `sortAi`, `filterAi`, `mapAi`, and `reduceAi` call sites in TypeScript source files. See section 2. |
 | `closeBundle` | Once, at the end of `vite build` (skipped in watch builds, which reuse the API across rebuilds) | Disposes the TypeScript snapshot and closes the TypeScript API. |
 | `closeWatcher` | When the dev server closes | Same cleanup as `closeBundle`. |
@@ -59,7 +59,7 @@ flowchart TD
     AA --> AB[generateAiFunction]
     AB --> AC{Cache enabled and<br/>cache file exists?}
     AC -->|hit| AD[Read cached function<br/>and validate it]
-    AC -->|miss| AE[Call OpenAI API<br/>and validate the result]
+    AC -->|miss| AE[Call OpenAI API<br/>and validate the result<br/>including result shape]
     AE --> AF[Write cache file]
     AD --> AG[Replace the method tail<br/>with generated body<br/>via MagicString]
     AF --> AG
@@ -76,6 +76,7 @@ Notes on the flow:
 - Only the method tail is rewritten. The plugin replaces the text from `items.end` to `node.end`, so the rest of the file keeps its original text and layout.
 - The source map is hires, so stack traces and breakpoints still point at the original TypeScript lines.
 - Cache hits are still validated. A cached function that cannot be parsed or no longer matches the schema raises an error; it is not regenerated automatically. Delete the cache file to force a new generation.
+- For `mapAi<U>` and `reduceAi<U>` with an object type `U`, validation also checks the result shape: every required field must be returned, and object literal keys must be declared in `U`. Value types and scalar or array results are not checked.
 - Each call maps to a native method by its spec: `sortAi` to `toSorted`, `filterAi` to `filter`, `mapAi` to `map`, and `reduceAi` to `reduce`. The spec also sets the allowed helper methods and output role for the generated function.
 
 ## 3. An AI array call (sequence view)
@@ -146,7 +147,10 @@ Practical consequences:
 | File | Role in the pipeline |
 | --- | --- |
 | [src/aiCompiler.ts](../src/aiCompiler.ts) | Plugin entry. Declares hooks and `enforce: 'pre'`. |
+| [src/config.ts](../src/config.ts) | Reads and validates `.ai-rc.json`, then applies defaults. |
 | [src/transform/transformModule.ts](../src/transform/transformModule.ts) | Per-module filter, source-match check, AST walk, and MagicString rewrite. |
-| [src/openai/generateAiFunction.ts](../src/openai/generateAiFunction.ts) | Cache key, cache read and write, OpenAI call, and validation. |
+| [src/openai/generateAiFunction.ts](../src/openai/generateAiFunction.ts) | Cache key, cache read and write, and OpenAI call. |
+| [src/functions/inferSchema.ts](../src/functions/inferSchema.ts) | Infers the item schema and the result shape from TypeScript types. |
+| [src/functions/validateAiFunction.ts](../src/functions/validateAiFunction.ts) | Validates generated functions: syntax, allowed methods, and result shape. |
 | [src/translations/en.ts](../src/translations/en.ts) | User-facing error messages. |
 | [src/errorContext.ts](../src/errorContext.ts) | Adds the `[ai-compile-time]` prefix and extra context to errors. |
