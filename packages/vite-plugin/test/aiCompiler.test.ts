@@ -261,6 +261,37 @@ const result = items.filterAi('keep');
     }
   });
 
+  it('adds call-site details and actionable guidance to compilation errors', async () => {
+    const source = `${methods}
+const result = products.filterAi('keep active items');
+`;
+    const { plugin, sourcePath, cleanup } = await initializedPlugin(source);
+    vi.spyOn(generation, 'generateAiFunction').mockRejectedValue(
+      new Error('Forbidden property access: privateField')
+    );
+    const callOffset = source.indexOf('products.filterAi');
+    const callLine = source.slice(0, callOffset).split('\n').length;
+    const callColumn =
+      callOffset - source.lastIndexOf('\n', callOffset - 1);
+
+    try {
+      await expect(callTransform(plugin, source, sourcePath)).rejects.toMatchObject({
+        message: expect.stringContaining(
+          `Failed to compile filterAi() in ${sourcePath}:${callLine}:${callColumn}`
+        ),
+        cause: expect.objectContaining({
+          message: 'Forbidden property access: privateField'
+        })
+      });
+      await expect(callTransform(plugin, source, sourcePath)).rejects.toThrow(
+        'Insight: The generated function did not meet the plugin’s validation rules'
+      );
+    } finally {
+      plugin.closeBundle?.call(plugin);
+      await cleanup();
+    }
+  });
+
   it('requires project configuration and a configured API key', async () => {
     const missingKey = await createProject(`${methods} const x = 1;`, {});
     try {

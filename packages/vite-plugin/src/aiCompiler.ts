@@ -28,6 +28,10 @@ import {
     inferAccumulatorSchema,
     inferSchema
 } from './comparator/inferSchema.js';
+import {
+    createConfigurationError,
+    createTransformError
+} from './errorContext.js';
 import { generateAiFunction } from './openai/generateAiFunction.js';
 import type { AIConfig } from './types.js';
 
@@ -158,7 +162,7 @@ export function aiCompiler(): Plugin {
         initialSnapshot?.dispose();
         api.close();
         api = undefined;
-        throw error;
+        throw createConfigurationError(error, root);
       }
     },
 
@@ -186,6 +190,7 @@ export function aiCompiler(): Plugin {
         }
 
         const activeProject = project;
+        const activeSource = programSource;
 
         if (programSource.text !== source) {
           throw new Error(
@@ -221,64 +226,80 @@ export function aiCompiler(): Plugin {
             const items = node.expression.expression;
             const initialValue = node.arguments[1];
 
-            if (
-              !instructionNode ||
-              !isStringLiteral(instructionNode) ||
-              node.arguments.length !== (spec.kind === 'reduce' ? 2 : 1) ||
-              (node.typeArguments &&
-                spec.kind !== 'map' &&
-                spec.kind !== 'reduce')
-            ) {
-              throw new Error(
-                `Invalid ${spec.method}() invocation in ${id}`
-              );
-            }
-
-            const schema = inferSchema(
-              activeProject.checker,
-              items,
-              spec.method
-            );
-
-            const accumulator = spec.kind === 'reduce' && initialValue
-              ? inferAccumulatorSchema(
-                activeProject.checker,
-                initialValue,
-                spec.method,
-                node.typeArguments?.[0]
-              )
-              : undefined;
-            const parameterSchemas = accumulator
-              ? {
-                acc: accumulator,
-                item: { kind: 'object' as const, fields: schema }
+            try {
+              if (
+                !instructionNode ||
+                !isStringLiteral(instructionNode) ||
+                node.arguments.length !== (spec.kind === 'reduce' ? 2 : 1) ||
+                (node.typeArguments &&
+                  spec.kind !== 'map' &&
+                  spec.kind !== 'reduce')
+              ) {
+                throw new Error(
+                  `Invalid ${spec.method}() invocation in ${id}`
+                );
               }
-              : undefined;
-            const generated = await generateAiFunction(
-              config,
-              root,
-              spec,
-              instructionNode.text,
-              schema,
-              compilerApi,
-              parameterSchemas
-            );
 
-            const typeArguments =
-              (spec.kind === 'map' || spec.kind === 'reduce') &&
-              node.typeArguments
-              ? `<${node.typeArguments.map((type) => type.getText(programSource)).join(', ')}>`
-              : '';
-            const reducerArguments = spec.kind === 'reduce'
-              ? `, ${initialValue?.getText(programSource)}`
-              : '';
+              const schema = inferSchema(
+                activeProject.checker,
+                items,
+                spec.method
+              );
 
-            // Rewrite only the method tail so nested receiver calls stay intact.
-            replacements.push({
-              start: items.end,
-              end: node.end,
-              value: `.${spec.replacementMethod}${typeArguments}(${generated}${reducerArguments})`
-            });
+              const accumulator = spec.kind === 'reduce' && initialValue
+                ? inferAccumulatorSchema(
+                  activeProject.checker,
+                  initialValue,
+                  spec.method,
+                  node.typeArguments?.[0]
+                )
+                : undefined;
+              const parameterSchemas = accumulator
+                ? {
+                  acc: accumulator,
+                  item: { kind: 'object' as const, fields: schema }
+                }
+                : undefined;
+              const generated = await generateAiFunction(
+                config,
+                root,
+                spec,
+                instructionNode.text,
+                schema,
+                compilerApi,
+                parameterSchemas
+              );
+
+              const typeArguments =
+                (spec.kind === 'map' || spec.kind === 'reduce') &&
+                node.typeArguments
+                ? `<${node.typeArguments.map((type) => type.getText(programSource)).join(', ')}>`
+                : '';
+              const reducerArguments = spec.kind === 'reduce'
+                ? `, ${initialValue?.getText(programSource)}`
+                : '';
+
+              // Rewrite only the method tail so nested receiver calls stay intact.
+              replacements.push({
+                start: items.end,
+                end: node.end,
+                value: `.${spec.replacementMethod}${typeArguments}(${generated}${reducerArguments})`
+              });
+            } catch (error) {
+              const location = activeSource.getLineAndCharacterOfPosition(
+                node.getStart(activeSource)
+              );
+              throw createTransformError(error, {
+                file: id,
+                line: location.line + 1,
+                column: location.character + 1,
+                method: spec.method,
+                instruction: instructionNode && isStringLiteral(instructionNode)
+                  ? instructionNode.text
+                  : '',
+                model: config.model
+              });
+            }
 
             await visit(items);
             return;

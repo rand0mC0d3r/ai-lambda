@@ -149,6 +149,8 @@ The validator accepts a restricted expression grammar: it rejects computed or op
 | Generation or OpenAI error | Check network access, API key validity, and the instruction. A failed generation stops the transform; it will not leave an uncompiled AI call in the output. |
 | `sortAi` missing at runtime | Confirm the plugin is registered and the call is in a transformed JS/TS module. Check `toSorted` support too. |
 
+Build errors include the failing call site, instruction, underlying cause, and a suggested next step. Configuration errors identify the resolved Vite root and expected config files.
+
 ## 🧪 Run tests
 
 From this package directory:
