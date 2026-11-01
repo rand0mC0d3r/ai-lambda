@@ -167,5 +167,13 @@ export const pipelines: Pipeline[] = [
   {
     label: 'Unsorted',
     run: () => cart
+  },
+  {
+    label: 'Inject with AI',
+    run: () =>
+      cart.reduceAi<CartItem[]>(
+        'Append the current item to acc. Then append a new object with id set to the current item id plus 100, product set to "Injected item", category set to "Accessories", quantity set to 1, unitPrice set to 9.99, addedAt set to the current item addedAt, and inStock set to true. Return acc.',
+        []
+      )
   }
 ];
