@@ -15,7 +15,7 @@ import {
   PERMITTED_SYNTAX_KINDS,
   PROTECTED_PROPERTIES
 } from '../constants.js';
-import type { ResultShape } from '../aiFunctions.js';
+import type { ExpectedResult, ResultShape } from '../aiFunctions.js';
 import { AIPluginError } from '../errors.js';
 import { translate } from '../translations/en.js';
 import type { Node } from 'typescript/unstable/ast';
@@ -55,6 +55,18 @@ interface ParameterInfo {
   scalarType?: string;
 }
 
+/** Compiler options for the temporary module, so nullable and optional types are enforced. */
+const SEMANTIC_CHECK_TSCONFIG = {
+  compilerOptions: {
+    strict: true,
+    noEmit: true,
+    target: 'ES2022',
+    lib: ['es2022'],
+    types: []
+  },
+  files: [GENERATED_FUNCTION_FILE]
+};
+
 /**
  * Checks that generated code is a valid, allowed arrow function for the given call.
  *
@@ -63,7 +75,7 @@ interface ParameterInfo {
  * @param spec Spec for the AI method.
  * @param api TypeScript API used to type-check the code.
  * @param parameterSchemas Schemas for extra parameters, when present.
- * @param resultShape Expected result shape, when present.
+ * @param expectedResult Declared parameter and result types, and the result key shape, when known.
  * @throws {AIPluginError} With code `invalid_generated` when the code fails validation.
  */
 export async function validateAiFunction(
@@ -72,10 +84,10 @@ export async function validateAiFunction(
   spec: AIFunctionSpec,
   api: API,
   parameterSchemas?: Record<string, AIFunctionParameterSchema>,
-  resultShape?: ResultShape
+  expectedResult?: ExpectedResult
 ): Promise<void> {
   try {
-    await checkGeneratedFunction(code, schema, spec, api, parameterSchemas, resultShape);
+    await checkGeneratedFunction(code, schema, spec, api, parameterSchemas, expectedResult);
   } catch (error) {
     if (error instanceof AIPluginError) throw error;
 
@@ -111,6 +123,26 @@ function parameterTypes(
 }
 
 /**
+ * Builds the contextual function type that the generated arrow is checked against.
+ *
+ * @param spec Spec for the AI method.
+ * @param expectedResult Declared parameter and result types, when known.
+ * @returns The function type text, or `undefined` when there is nothing to check.
+ */
+function contextualFunctionType(
+  spec: AIFunctionSpec,
+  expectedResult: ExpectedResult | undefined
+): string | undefined {
+  if (!expectedResult?.parameters && !expectedResult?.result) return undefined;
+
+  const parameters = spec.parameters.map(
+    (parameter) => `${parameter}: ${expectedResult.parameters?.[parameter] ?? 'any'}`
+  );
+
+  return `(${parameters.join(', ')}) => ${expectedResult.result ?? 'any'}`;
+}
+
+/**
  * Parses the generated code in a temporary module, type-checks it, and runs the AST
  * checks. The temporary directory is removed when the check finishes.
  *
@@ -119,7 +151,7 @@ function parameterTypes(
  * @param spec Spec for the AI method.
  * @param api TypeScript API used to create the snapshot.
  * @param parameterSchemas Schemas for extra parameters, when present.
- * @param resultShape Expected result shape, when present.
+ * @param expectedResult Declared parameter and result types, and the result key shape, when known.
  * @throws {AIPluginError} With code `invalid_generated` when the code fails a check.
  */
 async function checkGeneratedFunction(
@@ -128,18 +160,23 @@ async function checkGeneratedFunction(
   spec: AIFunctionSpec,
   api: API,
   parameterSchemas?: Record<string, AIFunctionParameterSchema>,
-  resultShape?: ResultShape
+  expectedResult?: ExpectedResult
 ): Promise<void> {
   const tempDir = await mkdtemp(
     path.join(tmpdir(), GENERATED_FUNCTION_TEMP_PREFIX)
   );
   const tempFile = path.join(tempDir, GENERATED_FUNCTION_FILE);
+  const functionType = contextualFunctionType(spec, expectedResult);
   let snapshot: Snapshot | undefined;
 
   try {
     await writeFile(
+      path.join(tempDir, 'tsconfig.json'),
+      JSON.stringify(SEMANTIC_CHECK_TSCONFIG)
+    );
+    await writeFile(
       tempFile,
-      `const ${GENERATED_FUNCTION_VARIABLE} = ${code};`
+      `const ${GENERATED_FUNCTION_VARIABLE}${functionType ? `: ${functionType}` : ''} = ${code};`
     );
     snapshot = api.updateSnapshot({ openFiles: [tempFile] });
 
@@ -300,7 +337,7 @@ async function checkGeneratedFunction(
       }
     }
 
-    // Checks keys only; value types are not verified.
+    // Checks key names only. Value types are checked by the semantic diagnostics below.
     function checkResultShape(body: Node, shape: ResultShape): void {
       let expression = body;
 
@@ -520,8 +557,21 @@ async function checkGeneratedFunction(
 
     inspect(initializer);
 
-    if (resultShape) {
-      checkResultShape(initializer.body, resultShape);
+    if (expectedResult?.shape) {
+      checkResultShape(initializer.body, expectedResult.shape);
+    }
+
+    if (functionType) {
+      const diagnostic = project.program
+        .getSemanticDiagnostics(tempFile)
+        .find((item) => item.category === DiagnosticCategory.Error);
+
+      if (diagnostic) {
+        throw new Error(translate('semanticTypeMismatch', {
+          role: spec.role,
+          detail: diagnostic.text
+        }));
+      }
     }
   } finally {
     try {

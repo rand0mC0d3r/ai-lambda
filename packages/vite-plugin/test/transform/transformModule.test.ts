@@ -91,7 +91,7 @@ const result = products
         { name: 'string', price: 'number', active: 'boolean' },
         expect.anything(),
         undefined,
-        undefined,
+        expect.objectContaining({ result: 'boolean' }),
         expect.anything()
       );
     } finally {
@@ -144,7 +144,7 @@ const first = products.filterAi('active').findAi('pro product');
         { name: 'string', price: 'number', active: 'boolean' },
         expect.anything(),
         undefined,
-        undefined,
+        expect.objectContaining({ result: 'boolean' }),
         expect.anything()
       );
     } finally {
@@ -177,7 +177,7 @@ const hasExpensive = products.filterAi('active').someAi('expensive product');
         { name: 'string', price: 'number', active: 'boolean' },
         expect.anything(),
         undefined,
-        undefined,
+        expect.objectContaining({ result: 'boolean' }),
         expect.anything()
       );
     } finally {
@@ -228,7 +228,7 @@ const summary = products.reduceAi<Summary>('summary', { total: 0, label: '' });
         },
         expect.anything(),
         undefined,
-        undefined,
+        expect.objectContaining({ result: 'boolean', parameters: { item: expect.any(String) } }),
         expect.anything()
       );
       expect(generation.generateAiFunction).toHaveBeenNthCalledWith(
@@ -246,7 +246,10 @@ const summary = products.reduceAi<Summary>('summary', { total: 0, label: '' });
             fields: expect.objectContaining({ price: 'number' })
           }
         },
-        undefined,
+        expect.objectContaining({
+          parameters: { acc: '(number)[]', item: expect.any(String) },
+          result: '(number)[]'
+        }),
         expect.anything()
       );
       expect(generation.generateAiFunction).toHaveBeenNthCalledWith(
@@ -268,7 +271,10 @@ const summary = products.reduceAi<Summary>('summary', { total: 0, label: '' });
             fields: expect.objectContaining({ name: 'string' })
           }
         },
-        undefined,
+        expect.objectContaining({
+          parameters: { acc: expect.any(String), item: expect.any(String) },
+          result: expect.stringContaining('name: string')
+        }),
         expect.anything()
       );
       expect(generation.generateAiFunction).toHaveBeenNthCalledWith(
@@ -289,7 +295,9 @@ const summary = products.reduceAi<Summary>('summary', { total: 0, label: '' });
             fields: expect.objectContaining({ name: 'string' })
           }
         },
-        { fields: { total: 'number', label: 'string' }, optionalFields: [] },
+        expect.objectContaining({
+          shape: { fields: { total: 'number', label: 'string' }, optionalFields: [] }
+        }),
         expect.anything()
       );
     } finally {

@@ -56,6 +56,7 @@ const english = {
   undeclaredResultField: 'Generated result has undeclared field: {{name}}',
   missingResultField: 'Generated result is missing declared field: {{name}}',
   resultNotObject: 'Generated result must be an object literal or an object parameter because the result type is an object',
+  semanticTypeMismatch: 'Generated {{role}} does not match the declared types: {{detail}}',
   addApiKey: 'Add a valid apiKey to {{configFile}} in the resolved Vite root.',
   invalidInvocationInsight: 'Pass a string literal as the instruction; reduceAi() also requires an initial value, and only mapAi()/reduceAi() accept type arguments.',
   unsupportedTypesInsight: 'Ensure the TypeScript project includes this source file and uses arrays with supported scalar or Date fields; nested and mixed-union field types are not supported.',

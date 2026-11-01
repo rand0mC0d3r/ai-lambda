@@ -14,7 +14,7 @@ import type { Logger } from 'vite';
 import { aiFunctionSpecs } from '../constants.js';
 import {
   inferAccumulatorSchema,
-  inferResultShape,
+  inferExpectedResult,
   inferSchema
 } from '../functions/inferSchema.js';
 import { AIPluginError } from '../errors.js';
@@ -185,15 +185,13 @@ export async function transformModule(
               item: { kind: 'object' as const, fields: schema }
             }
             : undefined;
-          const resultShape = acceptsTypeArguments
-            ? inferResultShape(
-              activeProject.checker,
-              items,
-              spec.method,
-              spec.kind === 'reduce' ? initialValue : undefined,
-              node.typeArguments?.[0]
-            )
-            : undefined;
+          const expectedResult = inferExpectedResult(
+            activeProject.checker,
+            items,
+            spec,
+            spec.kind === 'reduce' ? initialValue : undefined,
+            node.typeArguments?.[0]
+          );
 
           generate = () => generateAiFunction(
             config,
@@ -203,7 +201,7 @@ export async function transformModule(
             schema,
             api,
             parameterSchemas,
-            resultShape,
+            expectedResult,
             logger
           );
         } catch (error) {

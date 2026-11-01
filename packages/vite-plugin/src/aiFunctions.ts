@@ -37,6 +37,19 @@ export interface ResultShape {
 }
 
 /**
+ * Describes what a generated function must return and accept, for checking
+ * the generated code against the declared types.
+ */
+export interface ExpectedResult {
+  /** Result keys to check. Used for a cache key, so it is kept separate from the type text. */
+  shape?: ResultShape;
+  /** TypeScript type text for each spec parameter, keyed by parameter name. */
+  parameters?: Record<string, string>;
+  /** TypeScript type text for the declared result, when it can be expressed. */
+  result?: string;
+}
+
+/**
  * Describes the type of a generated function parameter: a scalar, an object
  * with simple fields, or an array of scalars or objects.
  */

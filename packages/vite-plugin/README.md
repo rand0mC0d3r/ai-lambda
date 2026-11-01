@@ -168,7 +168,7 @@ const revenue = orders
 ### Type arguments
 
 - `sortAi` returns a new array because it compiles to `toSorted`; the input is not mutated.
-- `mapAi<U>` and `reduceAi<U>` accept a type argument that describes the result to TypeScript. When `U` is an object type, the plugin checks the generated function at build time: every declared required field must be provided, and object literal keys must be declared in `U`. Value types are not verified, and scalar and array results are not checked.
+- `mapAi<U>` and `reduceAi<U>` accept a type argument that describes the result to TypeScript. The plugin type-checks the generated function at build time against the declared types: field value types, required and optional fields, `null` and `undefined` in nullable fields, and nested object fields are all checked. Scalar and array results are checked against `U` as well. Comparators must return `number`, and predicates for `filterAi`, `findAi`, and `someAi` must return `boolean`, so an expression such as `item.name && x` is rejected.
 - For an empty array, pass an explicit type so `reduceAi` knows the accumulator type:
 
 ```ts
@@ -287,7 +287,7 @@ Costs are estimates from a built-in table of standard-tier list prices per 1M to
 ## Known limitations
 
 - Only arrays of objects with `string`, `number`, `boolean`, or `Date` fields are supported. Nested objects and mixed unions are not.
-- `mapAi<U>` and `reduceAi<U>` object results are checked for required and undeclared keys at build time only. Field value types are not verified, and scalar and array results are not checked.
+- Generated functions are type-checked with the TypeScript checker against the declared types. Field value types, required and optional fields, nullable fields, and nested objects are verified for `mapAi<U>` and `reduceAi<U>`. Scalar and array results are checked too. Comparators must return `number` and predicates must return `boolean`. Reducer accumulators must match the declared accumulator type.
 - The API key is only read from `.ai-rc.json`; there is no environment-variable fallback.
 - The key is required even when every function is cached.
 - `sortAi` needs `Array.prototype.toSorted` at runtime (or a polyfill).

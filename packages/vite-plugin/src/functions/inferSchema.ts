@@ -1,4 +1,5 @@
 import {
+  SignatureKind,
   SymbolFlags,
   TypeFlags,
   type Checker,
@@ -7,10 +8,20 @@ import {
 import type { Expression, TypeNode } from 'typescript/unstable/ast';
 import type {
   AIFunctionParameterSchema,
+  AIFunctionSpec,
+  ExpectedResult,
   ResultShape
 } from '../aiFunctions.js';
 import { AIPluginError } from '../errors.js';
 import { translate } from '../translations/en.js';
+
+/** Nesting limit for rendered types, which also stops recursive types. */
+const MAX_TYPE_DEPTH = 8;
+
+const IDENTIFIER_PATTERN = /^[A-Za-z_$][\w$]*$/;
+
+/** Methods whose callback must return a boolean. */
+const PREDICATE_KINDS = new Set<AIFunctionSpec['kind']>(['filter', 'find', 'some']);
 
 /**
  * Maps a TypeScript type to the simple type name used in generated code.
@@ -48,6 +59,8 @@ function getNumberIndexValueType(checker: Checker, type: Type): Type | undefined
  * @param type The object type whose properties are inspected.
  * @param location The expression used to resolve property types.
  * @param method The source method name, used in error messages.
+ * @param allowNested When true, properties that are not simple types are recorded as `object`
+ *   instead of failing. Used for result shapes, which check only key names.
  * @returns A map from property name to simple type.
  * @throws {AIPluginError} With code `unsupported_type` when a property has an unsupported type.
  */
@@ -55,7 +68,8 @@ function inferFields(
   checker: Checker,
   type: Type,
   location: Expression,
-  method: string
+  method: string,
+  allowNested = false
 ): Record<string, string> {
   const schema: Record<string, string> = {};
 
@@ -71,6 +85,11 @@ function inferFields(
     const fieldType = fieldTypes[0];
 
     if (!fieldType || fieldTypes.some((variant) => variant !== fieldType)) {
+      if (allowNested) {
+        schema[property.name] = 'object';
+        continue;
+      }
+
       throw new AIPluginError(
         translate('unsupportedFieldType', {
           method,
@@ -170,10 +189,181 @@ export function inferResultShape(
   if (!properties.length) return undefined;
 
   return {
-    fields: inferFields(checker, resultType, initialValue ?? items, method),
+    fields: inferFields(checker, resultType, initialValue ?? items, method, true),
     optionalFields: properties
       .filter((property) => (property.flags & SymbolFlags.Optional) !== 0)
       .map((property) => property.name)
+  };
+}
+
+/**
+ * Renders a checker type as TypeScript source text for the semantic check.
+ * Literal types are widened. Parameter types drop `null` and `undefined`, since the
+ * prompt schema does not record nullability. Result types keep them.
+ *
+ * @param checker The TypeScript type checker.
+ * @param type The type to render.
+ * @param location The expression used to resolve property types.
+ * @param mode Whether the text types a parameter or the declared result.
+ * @param depth The current nesting depth.
+ * @returns The source text, or `undefined` when the type cannot be expressed faithfully.
+ */
+function typeSource(
+  checker: Checker,
+  type: Type,
+  location: Expression,
+  mode: 'parameter' | 'result',
+  depth = 0
+): string | undefined {
+  if (depth > MAX_TYPE_DEPTH) return undefined;
+
+  const parts = new Set<string>();
+
+  for (const variant of type.isUnionType() ? type.getTypes() : [type]) {
+    if (
+      mode === 'parameter' &&
+      variant.flags & (TypeFlags.Null | TypeFlags.Undefined)
+    ) {
+      continue;
+    }
+
+    const part = singleTypeSource(checker, variant, location, mode, depth);
+
+    if (part === undefined) return undefined;
+
+    parts.add(part);
+  }
+
+  return parts.size ? [...parts].join(' | ') : undefined;
+}
+
+/**
+ * Renders a non-union type as TypeScript source text. See {@link typeSource}.
+ *
+ * @param checker The TypeScript type checker.
+ * @param type The non-union type to render.
+ * @param location The expression used to resolve property types.
+ * @param mode Whether the text types a parameter or the declared result.
+ * @param depth The current nesting depth.
+ * @returns The source text, or `undefined` when the type cannot be expressed faithfully.
+ */
+function singleTypeSource(
+  checker: Checker,
+  type: Type,
+  location: Expression,
+  mode: 'parameter' | 'result',
+  depth: number
+): string | undefined {
+  const { flags } = type;
+
+  if (flags & TypeFlags.Any) return 'any';
+  if (flags & TypeFlags.Unknown) return 'unknown';
+  if (flags & TypeFlags.Null) return 'null';
+  if (flags & TypeFlags.Undefined) return 'undefined';
+  if (flags & TypeFlags.StringLike) return 'string';
+  if (flags & TypeFlags.NumberLike) return 'number';
+  if (flags & (TypeFlags.BigInt | TypeFlags.BigIntLiteral)) return 'bigint';
+  if (flags & TypeFlags.BooleanLike) return 'boolean';
+  if (flags & TypeFlags.NonPrimitive) return 'object';
+
+  if (!(flags & TypeFlags.Object)) return undefined;
+
+  if (type.getSymbol()?.name === 'Date') return 'Date';
+
+  if (checker.isArrayType(type)) {
+    const elementType = getNumberIndexValueType(checker, type);
+    const elementSource = elementType &&
+      typeSource(checker, elementType, location, mode, depth + 1);
+
+    return elementSource === undefined ? undefined : `(${elementSource})[]`;
+  }
+
+  // Functions and index signatures cannot be rendered as plain object literal types.
+  if (
+    checker.getSignaturesOfType(type, SignatureKind.Call).length ||
+    checker.getIndexInfosOfType(type).length
+  ) {
+    return undefined;
+  }
+
+  const members: string[] = [];
+
+  for (const property of checker.getPropertiesOfType(type)) {
+    const propertySource = typeSource(
+      checker,
+      checker.getTypeOfSymbolAtLocation(property, location),
+      location,
+      mode,
+      depth + 1
+    );
+
+    if (propertySource === undefined) return undefined;
+
+    const name = IDENTIFIER_PATTERN.test(property.name)
+      ? property.name
+      : JSON.stringify(property.name);
+    // Parameters omit `?` so they match the schema given to the model, which has no optional fields.
+    const optional = mode === 'result' && (property.flags & SymbolFlags.Optional) !== 0
+      ? '?'
+      : '';
+
+    members.push(`${name}${optional}: ${propertySource};`);
+  }
+
+  return `{ ${members.join(' ')} }`;
+}
+
+/**
+ * Builds the type information used to check generated code: the parameter types,
+ * the declared result type, and the result key shape for `mapAi` and `reduceAi`.
+ *
+ * @param checker The TypeScript type checker.
+ * @param items The array expression.
+ * @param spec The AI method spec.
+ * @param initialValue The `reduceAi` initial value, if any.
+ * @param explicitType The explicit type argument, if any.
+ * @returns The expected result. Parts that cannot be expressed are omitted.
+ */
+export function inferExpectedResult(
+  checker: Checker,
+  items: Expression,
+  spec: AIFunctionSpec,
+  initialValue?: Expression,
+  explicitType?: TypeNode
+): ExpectedResult {
+  const itemType = getItemType(checker, items, spec.method);
+  const accumulatorType = spec.kind === 'reduce' && initialValue
+    ? checker.getTypeAtLocation(explicitType ?? initialValue)
+    : undefined;
+  const itemSource = typeSource(checker, itemType, items, 'parameter');
+  const accumulatorSource = accumulatorType &&
+    typeSource(checker, accumulatorType, items, 'parameter');
+  const declaredType = explicitType
+    ? checker.getTypeAtLocation(explicitType)
+    : accumulatorType;
+  const resultSource = spec.kind === 'sort'
+    ? 'number'
+    : PREDICATE_KINDS.has(spec.kind)
+      ? 'boolean'
+      : declaredType && typeSource(checker, declaredType, items, 'result');
+  const parameters: Record<string, string> = {};
+
+  spec.parameters.forEach((parameter, index) => {
+    const source = spec.kind === 'reduce' && index === 0
+      ? accumulatorSource
+      : itemSource;
+
+    if (source) parameters[parameter] = source;
+  });
+
+  const shape = spec.kind === 'map' || spec.kind === 'reduce'
+    ? inferResultShape(checker, items, spec.method, initialValue, explicitType)
+    : undefined;
+
+  return {
+    ...(shape ? { shape } : {}),
+    parameters,
+    ...(resultSource ? { result: resultSource } : {})
   };
 }
 

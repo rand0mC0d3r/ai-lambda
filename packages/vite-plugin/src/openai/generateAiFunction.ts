@@ -6,7 +6,7 @@ import type { Logger } from 'vite';
 import type {
   AIFunctionParameterSchema,
   AIFunctionSpec,
-  ResultShape
+  ExpectedResult
 } from '../aiFunctions.js';
 import {
   COMPILER_VERSION,
@@ -215,7 +215,7 @@ const inFlight = new Map<string, Promise<string>>();
  * @param schema Field names and types of the array element or argument.
  * @param api TypeScript API used to validate the result.
  * @param parameterSchemas Schemas for extra parameters, when present.
- * @param resultShape Expected result shape, when the call reads a nested result.
+ * @param expectedResult Declared types and result key shape, when known.
  * @param logger Logger for progress and summary output.
  * @returns The generated JavaScript arrow function as source text.
  */
@@ -227,7 +227,7 @@ export function generateAiFunction(
   schema: Record<string, string>,
   api: API,
   parameterSchemas: ParameterSchemas | undefined,
-  resultShape: ResultShape | undefined,
+  expectedResult: ExpectedResult | undefined,
   logger: Logger
 ): Promise<string> {
   const cacheKey = hash(JSON.stringify({
@@ -237,7 +237,8 @@ export function generateAiFunction(
     compilerVersion: COMPILER_VERSION,
     ...(parameterSchemas ? { parameterSchemas } : {}),
     // Keyed only when present so cache files for scalar and array results stay valid.
-    ...(resultShape ? { resultShape } : {}),
+    // Type text is not keyed: cached code is re-validated against it on every read.
+    ...(expectedResult?.shape ? { resultShape: expectedResult.shape } : {}),
     // Sort keys stay unchanged so comparators cached before filterAi existed remain valid.
     ...(spec.kind === 'sort' ? {} : { kind: spec.kind })
   }));
@@ -261,7 +262,7 @@ export function generateAiFunction(
     schema,
     api,
     parameterSchemas,
-    resultShape,
+    expectedResult,
     trace,
     logger
   )
@@ -342,7 +343,7 @@ function completeCall(
  * @param schema Field names and types of the array element or argument.
  * @param api TypeScript API used to validate the cached code.
  * @param parameterSchemas Schemas for extra parameters, when present.
- * @param resultShape Expected result shape, when present.
+ * @param expectedResult Declared types and result key shape, when known.
  * @param logger Logger for warnings.
  * @returns The cached code, or `undefined` if there is no usable entry.
  */
@@ -352,7 +353,7 @@ async function readCachedFunction(
   schema: Record<string, string>,
   api: API,
   parameterSchemas: ParameterSchemas | undefined,
-  resultShape: ResultShape | undefined,
+  expectedResult: ExpectedResult | undefined,
   logger: Logger
 ): Promise<string | undefined> {
   const cached = await readCache(cacheFile);
@@ -378,7 +379,7 @@ async function readCachedFunction(
       spec,
       api,
       parameterSchemas,
-      resultShape
+      expectedResult
     );
   } catch (error) {
     // A stale cache entry (e.g. produced before a validator change) should be replaced, not fail the build.
@@ -404,7 +405,7 @@ async function readCachedFunction(
  * @param schema Field names and types of the array element or argument.
  * @param api TypeScript API used to validate the result.
  * @param parameterSchemas Schemas for extra parameters, when present.
- * @param resultShape Expected result shape, when present.
+ * @param expectedResult Declared types and result key shape, when known.
  * @param trace Mutable record updated with attempts, cache status, and usage.
  * @param logger Logger for progress output.
  * @returns The generated JavaScript arrow function as source text.
@@ -418,7 +419,7 @@ async function compileAiFunction(
   schema: Record<string, string>,
   api: API,
   parameterSchemas: ParameterSchemas | undefined,
-  resultShape: ResultShape | undefined,
+  expectedResult: ExpectedResult | undefined,
   trace: CallTrace,
   logger: Logger
 ): Promise<string> {
@@ -429,7 +430,7 @@ async function compileAiFunction(
       schema,
       api,
       parameterSchemas,
-      resultShape,
+      expectedResult,
       logger
     );
 
@@ -544,7 +545,7 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
     spec,
     api,
     parameterSchemas,
-    resultShape
+    expectedResult
   );
 
   if (config.cache) {
