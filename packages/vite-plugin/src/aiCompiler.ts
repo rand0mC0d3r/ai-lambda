@@ -1,25 +1,26 @@
+import MagicString from 'magic-string';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { Plugin } from 'vite';
 import type {
-  CallExpression,
-  Node,
-  PropertyAccessExpression
+    CallExpression,
+    Node,
+    PropertyAccessExpression
 } from 'typescript/unstable/ast';
 import {
-  isCallExpression,
-  isPropertyAccessExpression,
-  isStringLiteral
+    isCallExpression,
+    isPropertyAccessExpression,
+    isStringLiteral
 } from 'typescript/unstable/ast/is';
 import {
-  API,
-  type Snapshot
+    API,
+    type Snapshot
 } from 'typescript/unstable/sync';
-import {
-  inferAccumulatorSchema,
-  inferSchema
-} from './comparator/inferSchema.js';
+import type { Plugin } from 'vite';
 import { aiFunctionSpecs } from './aiFunctions.js';
+import {
+    inferAccumulatorSchema,
+    inferSchema
+} from './comparator/inferSchema.js';
 import { generateAiFunction } from './openai/generateAiFunction.js';
 import type { AIConfig } from './types.js';
 
@@ -234,20 +235,25 @@ export function aiCompiler(): Plugin {
 
         if (!replacements.length) return null;
 
-        let output = source;
+        const output = new MagicString(source);
 
         for (const replacement of replacements.sort(
           (a, b) => b.start - a.start
         )) {
-          output =
-            output.slice(0, replacement.start) +
-            replacement.value +
-            output.slice(replacement.end);
+          output.overwrite(
+            replacement.start,
+            replacement.end,
+            replacement.value
+          );
         }
 
         return {
-          code: output,
-          map: null
+          code: output.toString(),
+          map: output.generateMap({
+            source: id,
+            includeContent: true,
+            hires: true
+          })
         };
       } finally {
         snapshot.dispose();

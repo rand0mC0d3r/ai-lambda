@@ -69,7 +69,12 @@ const result = products
         code: expect.stringContaining(
           '.filter((item) => item.active).toSorted((a, b) => a.price - b.price).map<{ name: string }>((item) => ({...item})).reduce<number>((acc, item) => acc + item.price, 0)'
         ),
-        map: null
+        map: expect.objectContaining({
+          version: 3,
+          sources: [sourcePath],
+          sourcesContent: [source],
+          mappings: expect.stringMatching(/./)
+        })
       });
       expect(generation.generateAiFunction).toHaveBeenCalledTimes(4);
       expect(generation.generateAiFunction).toHaveBeenCalledWith(
