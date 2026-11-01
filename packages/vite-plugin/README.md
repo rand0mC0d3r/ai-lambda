@@ -59,6 +59,19 @@ Keep the API key and generated cache out of version control. For example:
 The API key is required when the plugin starts, even if a cached function
 exists. With caching enabled, a cache hit avoids making a generation request.
 
+## Run tests
+
+From the repository root, run the plugin's unit tests and its 80% core-code
+coverage gate with:
+
+```sh
+npm test
+npm run test:coverage
+```
+
+From this package directory, the equivalent commands are `npm test` and
+`npm run test:coverage`.
+
 Add the following declarations to a `.d.ts` file included by the project's
 `tsconfig.json` so TypeScript accepts the array methods:
 

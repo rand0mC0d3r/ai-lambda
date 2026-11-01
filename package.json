@@ -24,6 +24,8 @@
     "predev": "npm run build --workspace vite-plugin-ai-lambda",
     "prebuild": "npm run build --workspace vite-plugin-ai-lambda",
     "build": "tsc --noEmit && vite build",
+    "test": "npm run test --workspace vite-plugin-ai-lambda",
+    "test:coverage": "npm run test:coverage --workspace vite-plugin-ai-lambda",
     "preview": "vite preview"
   },
   "workspaces": [

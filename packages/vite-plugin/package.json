@@ -4,7 +4,12 @@
   "description": "Compile natural-language array operations into JavaScript during Vite builds.",
   "license": "ISC",
   "type": "module",
-  "keywords": ["vite-plugin", "ai-lambda", "rollup-plugin", "rolldown-plugin"],
+  "keywords": [
+    "vite-plugin",
+    "ai-lambda",
+    "rollup-plugin",
+    "rolldown-plugin"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -19,13 +24,17 @@
   ],
   "scripts": {
     "prepack": "npm run build",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "peerDependencies": {
     "typescript": ">=7.0.2 <8.0.0",
     "vite": ">=6.0.0"
   },
   "devDependencies": {
-    "@types/node": "^26.6.6"
+    "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^5.0.5",
+    "vitest": "^5.0.5"
   }
 }
