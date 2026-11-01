@@ -167,7 +167,8 @@ export function aiCompiler(): Plugin {
           if (
             !instructionNode ||
             !ts.isStringLiteral(instructionNode) ||
-            node.arguments.length !== 1
+            node.arguments.length !== 1 ||
+            (node.typeArguments && spec.kind !== 'map')
           ) {
             throw new Error(
               `Invalid ${spec.method}() invocation in ${id}`
@@ -185,10 +186,14 @@ export function aiCompiler(): Plugin {
           );
 
           // Only the method tail is replaced so nested AI calls in the receiver stay intact.
+          const typeArguments = node.typeArguments
+            ? `<${node.typeArguments.map((type) => type.getText(ast)).join(', ')}>`
+            : '';
+
           replacements.push({
             start: items.end,
             end: node.end,
-            value: `.${spec.replacementMethod}(${generated})`
+            value: `.${spec.replacementMethod}${typeArguments}(${generated})`
           });
 
           await visit(items);

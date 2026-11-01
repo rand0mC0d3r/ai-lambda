@@ -156,6 +156,17 @@ const pipelines = [
         .sortAi(
           'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
         )
+  },
+  {
+    label: 'Map with AI, then sort',
+    run: () =>
+      cart
+        .mapAi(
+          'Apply a 10% discount to the unit price, rounded to two decimals, and keep all other fields.'
+        )
+        .sortAi(
+          'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
+        )
   }
 ];
 

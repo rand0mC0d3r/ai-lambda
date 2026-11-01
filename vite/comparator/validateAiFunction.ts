@@ -44,6 +44,7 @@ export function validateAiFunction(
 
   const allowed = new Set([
     ...spec.parameters,
+    ...(spec.globals ?? []),
     'undefined',
     'numeric',
     'sensitivity',
@@ -52,6 +53,12 @@ export function validateAiFunction(
   ]);
 
   function inspect(node: ts.Node): void {
+    // Output keys of an object literal are names, not references.
+    if (ts.isPropertyAssignment(node)) {
+      inspect(node.initializer);
+      return;
+    }
+
     if (ts.isIdentifier(node)) {
       if (!allowed.has(node.text)) {
         throw new Error(`Forbidden identifier: ${node.text}`);
@@ -100,6 +107,7 @@ export function validateAiFunction(
       ts.SyntaxKind.ObjectLiteralExpression,
       ts.SyntaxKind.PropertyAssignment,
       ts.SyntaxKind.ShorthandPropertyAssignment,
+      ts.SyntaxKind.SpreadAssignment,
       ts.SyntaxKind.CommaToken,
       ts.SyntaxKind.ParenthesizedExpression,
       ts.SyntaxKind.PrefixUnaryExpression,
