@@ -1,3 +1,0 @@
-{
-  "predicate": "(item) => item.inStock === true && item.unitPrice > 5"
-}

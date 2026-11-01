@@ -136,7 +136,7 @@ Nested objects, unsupported field types, and fields with mixed types (such as `s
 | `mapAi` | `localeCompare`, `includes`, `Math.round`, `Math.floor`, `Math.ceil` |
 | `reduceAi` | `localeCompare`, `includes`, `Math.round`, `Math.floor`, `Math.ceil` |
 
-The validator rejects unsupported syntax, unknown identifiers, undeclared fields, and calls outside each method's allowed helpers. These are small transformation expressions, not general-purpose JavaScript; review generated behavior like any other application code. `sortAi` also requires runtime support for `Array.prototype.toSorted` or a polyfill.
+The validator accepts a restricted expression grammar: it rejects computed or optional access, accessor definitions, prototype-related properties, shorthand/computed object keys, loose equality, coercive arithmetic, unknown identifiers, undeclared fields, and calls outside each method's declared helpers. Object spread is limited to object parameters, and array spread to array parameters. This validation is **not a JavaScript sandbox**: reading or spreading application data can invoke getters or proxy traps on those objects. Review generated behavior and the runtime data as you would any application code. `sortAi` also requires runtime support for `Array.prototype.toSorted` or a polyfill.
 
 ## 🔧 Troubleshooting
 

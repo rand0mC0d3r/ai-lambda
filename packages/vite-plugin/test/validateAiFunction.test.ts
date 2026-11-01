@@ -55,6 +55,70 @@ describe('validateAiFunction', () => {
     );
   });
 
+  it('accepts only parameter-based spreads and declared helper receivers', async () => {
+    await validator()(
+      '(item) => ({...item, price: Math.round(item.price)})',
+      'mapAi'
+    );
+    api = new API();
+    await validateAiFunction(
+      '(acc, item) => [...acc, item]',
+      { price: 'number' },
+      aiFunctionSpecs.reduceAi,
+      api,
+      {
+        acc: {
+          kind: 'array',
+          elementType: 'object',
+          elementFields: { price: 'number' }
+        },
+        item: { kind: 'object', fields: { price: 'number' } }
+      }
+    );
+
+    await expect(
+      validator()('(item) => ({...item.price})', 'mapAi')
+    ).rejects.toThrow('Object spread is only permitted on object parameters');
+    await expect(
+      validator()('(item) => item.round(item.price)', 'mapAi')
+    ).rejects.toThrow();
+  });
+
+  it.each([
+    ['computed property access', '(item) => item["price"]'],
+    ['optional property access', '(item) => item?.price'],
+    ['optional calls', '(item) => item.name?.includes("pro")'],
+    ['prototype access', '(item) => item.__proto__'],
+    ['constructor access', '(item) => item.constructor'],
+    ['prototype object keys', '(item) => ({__proto__: item})'],
+    ['computed object keys', '(item) => ({[item.name]: item.price})'],
+    ['shorthand object keys', '(item) => ({price})'],
+    ['loose equality', '(item) => item.price == "10"'],
+    ['string coercion through addition', '(item) => item.name + item.price'],
+    ['assignment', '(item) => item.price = 1'],
+    ['indirect global access', '(item) => ({}).constructor.constructor("return 1")()'],
+    ['bare schema field', '(item) => price'],
+    ['bare global', '(item) => Math'],
+    ['lexical this', '(item) => this']
+  ])('rejects %s', async (_label, code) => {
+    await expect(validator()(code, 'mapAi')).rejects.toThrow();
+  });
+
+  it('rejects accessor and setter definitions', async () => {
+    await expect(
+      validator()(
+        '(item) => ({ get price() { return item.price; } })',
+        'mapAi'
+      )
+    ).rejects.toThrow();
+    await expect(
+      validator()(
+        '(item) => ({ set price(value) { item.price = value; } })',
+        'mapAi'
+      )
+    ).rejects.toThrow();
+  });
+
   it.each([
     ['wrong parameter names', '(left, right) => left.price - right.price'],
     ['wrong parameter count', '(item) => item.price'],
@@ -71,8 +135,18 @@ describe('validateAiFunction', () => {
     await expect(validator()('(item) => [item]', 'mapAi')).rejects.toThrow(
       'Array literals are only permitted in reduceAi reducers'
     );
+    api = new API();
     await expect(
-      validator()('(acc, item) => acc + item.price', 'reduceAi')
+      validateAiFunction(
+        '(acc, item) => acc + item.price',
+        { price: 'number' },
+        aiFunctionSpecs.reduceAi,
+        api,
+        {
+          acc: { kind: 'scalar', type: 'number' },
+          item: { kind: 'object', fields: { price: 'number' } }
+        }
+      )
     ).resolves.toBeUndefined();
   });
 });
