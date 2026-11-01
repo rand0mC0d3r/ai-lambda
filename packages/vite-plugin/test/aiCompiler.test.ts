@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { aiCompiler } from '../src/aiCompiler.js';
 import * as generation from '../src/openai/generateAiFunction.js';
-import { aiFunctionSpecs } from '../src/aiFunctions.js';
+import { aiFunctionSpecs } from '../src/constants.js';
 import {
   callConfigResolved,
   callTransform,

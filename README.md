@@ -302,7 +302,7 @@ Generated code is restricted to simple expression-bodied arrow functions and sch
 | [`packages/vite-plugin/src/comparator/`](./packages/vite-plugin/src/comparator/) | Infers schemas and validates generated functions |
 | [`packages/vite-plugin/README.md`](./packages/vite-plugin/README.md) | Install and configure the reusable package |
 | [`docs/images/`](./docs/images/) | GitHub-themed code examples for this README |
-| [`src/ai-macros.d.ts`](./src/ai-macros.d.ts) | Declares the AI methods for TypeScript |
+| [`src/ai-macros.d.ts`](./src/ai-macros.d.ts) | Loads the plugin's TypeScript declarations and declares CSS modules |
 | [`src/pipelines.ts`](./src/pipelines.ts) | Demo pipelines with AI and native array methods |
 | [`src/cart.ts`](./src/cart.ts) | Sample typed cart data |
 

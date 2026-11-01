@@ -5,6 +5,10 @@ import type {
   AIFunctionParameterSchema,
   AIFunctionSpec
 } from '../aiFunctions.js';
+import {
+  COMPILER_VERSION,
+  OPENAI_RESPONSES_URL
+} from '../constants.js';
 import { validateAiFunction } from '../comparator/validateAiFunction.js';
 import type { AIConfig } from '../types.js';
 import { hash, isRecord } from '../utils.js';
@@ -25,7 +29,7 @@ export async function generateAiFunction(
     instruction,
     schema,
     model: config.model,
-    compilerVersion: 1,
+    compilerVersion: COMPILER_VERSION,
     ...(parameterSchemas ? { parameterSchemas } : {}),
     // Sort keys stay unchanged so comparators cached before filterAi existed remain valid.
     ...(spec.kind === 'sort' ? {} : { kind: spec.kind })
@@ -70,7 +74,7 @@ export async function generateAiFunction(
   console.log(`\n🤖 AI compiling ${spec.method}(): "${instruction}"`);
 
   const response = await fetch(
-    'https://api.openai.com/v1/responses',
+    OPENAI_RESPONSES_URL,
     {
       method: 'POST',
       headers: {

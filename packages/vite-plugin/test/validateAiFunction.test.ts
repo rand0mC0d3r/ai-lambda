@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { aiFunctionSpecs } from '../src/aiFunctions.js';
+import { aiFunctionSpecs } from '../src/constants.js';
 import { validateAiFunction } from '../src/comparator/validateAiFunction.js';
 import { API } from 'typescript/unstable/sync';
 

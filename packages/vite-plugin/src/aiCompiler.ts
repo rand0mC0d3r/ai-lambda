@@ -16,7 +16,14 @@ import {
     type Snapshot
 } from 'typescript/unstable/sync';
 import type { Plugin } from 'vite';
-import { aiFunctionSpecs } from './aiFunctions.js';
+import {
+    AI_CONFIG_FILE,
+    aiFunctionSpecs,
+    DEFAULT_GENERATED_DIR,
+    DEFAULT_MODEL,
+    TSCONFIG_FILE,
+    VITE_PLUGIN_NAME
+} from './constants.js';
 import {
     inferAccumulatorSchema,
     inferSchema
@@ -108,12 +115,12 @@ export function aiCompiler(): Plugin {
   }
 
   return {
-    name: 'ai-compile-time',
+    name: VITE_PLUGIN_NAME,
     enforce: 'pre',
 
     async configResolved(resolved) {
       root = resolved.root;
-      tsconfigPath = path.resolve(root, 'tsconfig.json');
+      tsconfigPath = path.resolve(root, TSCONFIG_FILE);
       api = new API();
 
       try {
@@ -137,16 +144,16 @@ export function aiCompiler(): Plugin {
           );
         }
 
-        const configPath = path.resolve(root, '.ai-rc.json');
+        const configPath = path.resolve(root, AI_CONFIG_FILE);
         config = JSON.parse(await readFile(configPath, 'utf8'));
 
         if (!config.apiKey) {
           throw new Error('Missing OpenAI API key in .ai-rc.json');
         }
 
-        config.model ||= 'gpt-4.1-mini';
+        config.model ||= DEFAULT_MODEL;
         config.cache ??= true;
-        config.generatedDir ||= '.ai-cache';
+        config.generatedDir ||= DEFAULT_GENERATED_DIR;
       } catch (error) {
         initialSnapshot?.dispose();
         api.close();

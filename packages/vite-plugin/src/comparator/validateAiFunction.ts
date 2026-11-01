@@ -5,6 +5,16 @@ import type {
   AIFunctionParameterSchema,
   AIFunctionSpec
 } from '../aiFunctions.js';
+import {
+  ARITHMETIC_OPERATORS,
+  COMPARISON_OPERATORS,
+  GENERATED_FUNCTION_FILE,
+  GENERATED_FUNCTION_TEMP_PREFIX,
+  GENERATED_FUNCTION_VARIABLE,
+  NUMERIC_METHODS,
+  PERMITTED_SYNTAX_KINDS,
+  PROTECTED_PROPERTIES
+} from '../constants.js';
 import type { Node } from 'typescript/unstable/ast';
 import {
   isArrowFunction,
@@ -33,50 +43,6 @@ import {
 } from 'typescript/unstable/sync';
 import { SyntaxKind } from 'typescript/unstable/ast';
 
-const permittedSyntaxKinds = new Set([
-  SyntaxKind.ArrowFunction,
-  SyntaxKind.Parameter,
-  SyntaxKind.BinaryExpression,
-  SyntaxKind.PropertyAccessExpression,
-  SyntaxKind.CallExpression,
-  SyntaxKind.Identifier,
-  SyntaxKind.NumericLiteral,
-  SyntaxKind.StringLiteral,
-  SyntaxKind.TrueKeyword,
-  SyntaxKind.FalseKeyword,
-  SyntaxKind.NullKeyword,
-  SyntaxKind.UndefinedKeyword,
-  SyntaxKind.ObjectLiteralExpression,
-  SyntaxKind.ArrayLiteralExpression,
-  SyntaxKind.PropertyAssignment,
-  SyntaxKind.ShorthandPropertyAssignment,
-  SyntaxKind.SpreadAssignment,
-  SyntaxKind.SpreadElement,
-  SyntaxKind.CommaToken,
-  SyntaxKind.ParenthesizedExpression,
-  SyntaxKind.PrefixUnaryExpression,
-  SyntaxKind.ConditionalExpression
-]);
-
-const numericMethods = new Set(['round', 'floor', 'ceil']);
-const protectedProperties = new Set(['__proto__', 'prototype', 'constructor']);
-const arithmeticOperators = new Set([
-  SyntaxKind.PlusToken,
-  SyntaxKind.MinusToken,
-  SyntaxKind.AsteriskToken,
-  SyntaxKind.AsteriskAsteriskToken,
-  SyntaxKind.SlashToken,
-  SyntaxKind.PercentToken
-]);
-const comparisonOperators = new Set([
-  SyntaxKind.LessThanToken,
-  SyntaxKind.LessThanEqualsToken,
-  SyntaxKind.GreaterThanToken,
-  SyntaxKind.GreaterThanEqualsToken,
-  SyntaxKind.EqualsEqualsEqualsToken,
-  SyntaxKind.ExclamationEqualsEqualsToken
-]);
-
 export async function validateAiFunction(
   code: string,
   schema: Record<string, string>,
@@ -84,12 +50,17 @@ export async function validateAiFunction(
   api: API,
   parameterSchemas?: Record<string, AIFunctionParameterSchema>
 ): Promise<void> {
-  const tempDir = await mkdtemp(path.join(tmpdir(), 'ai-lambda-'));
-  const tempFile = path.join(tempDir, 'generated.ts');
+  const tempDir = await mkdtemp(
+    path.join(tmpdir(), GENERATED_FUNCTION_TEMP_PREFIX)
+  );
+  const tempFile = path.join(tempDir, GENERATED_FUNCTION_FILE);
   let snapshot: Snapshot | undefined;
 
   try {
-    await writeFile(tempFile, `const __generated = ${code};`);
+    await writeFile(
+      tempFile,
+      `const ${GENERATED_FUNCTION_VARIABLE} = ${code};`
+    );
     snapshot = api.updateSnapshot({ openFiles: [tempFile] });
 
     const project = snapshot.getDefaultProjectForFile(tempFile);
@@ -195,7 +166,7 @@ export async function validateAiFunction(
           isIdentifier(node.expression.expression) &&
           node.expression.expression.text === 'Math' &&
           spec.globals?.includes('Math') === true &&
-          numericMethods.has(node.expression.name.text) &&
+          NUMERIC_METHODS.has(node.expression.name.text) &&
           spec.allowedMethods.includes(node.expression.name.text)
         );
       }
@@ -210,7 +181,7 @@ export async function validateAiFunction(
 
       if (isBinaryExpression(node)) {
         return (
-          arithmeticOperators.has(node.operatorToken.kind) &&
+          ARITHMETIC_OPERATORS.has(node.operatorToken.kind) &&
           isNumericExpression(node.left) &&
           isNumericExpression(node.right)
         );
@@ -250,7 +221,7 @@ export async function validateAiFunction(
         expression.text === 'Math' &&
         spec.globals?.includes('Math') === true
       ) {
-        return numericMethods.has(name.text) &&
+        return NUMERIC_METHODS.has(name.text) &&
           spec.allowedMethods.includes(name.text);
       }
 
@@ -280,7 +251,7 @@ export async function validateAiFunction(
           throw new Error('Computed object properties are not permitted');
         }
 
-        if (protectedProperties.has(name.text)) {
+        if (PROTECTED_PROPERTIES.has(name.text)) {
           throw new Error(`Forbidden object property: ${name.text}`);
         }
 
@@ -340,7 +311,7 @@ export async function validateAiFunction(
           isIdentifier(node.expression) &&
           node.expression.text === 'Math' &&
           spec.globals?.includes('Math') === true &&
-          numericMethods.has(property) &&
+          NUMERIC_METHODS.has(property) &&
           spec.allowedMethods.includes(property);
         const isStringMethod =
           isCallTarget &&
@@ -350,7 +321,7 @@ export async function validateAiFunction(
 
         if (
           node.questionDotToken ||
-          protectedProperties.has(property) ||
+          PROTECTED_PROPERTIES.has(property) ||
           (!isField && !isMathMethod && !isStringMethod)
         ) {
           throw new Error(`Forbidden property access: ${property}`);
@@ -376,7 +347,7 @@ export async function validateAiFunction(
         const operator = node.operatorToken.kind;
 
         if (
-          arithmeticOperators.has(operator) &&
+          ARITHMETIC_OPERATORS.has(operator) &&
           (!isNumericExpression(node.left) || !isNumericExpression(node.right))
         ) {
           throw new Error('Arithmetic operators require numeric expressions');
@@ -390,8 +361,8 @@ export async function validateAiFunction(
         }
 
         if (
-          !arithmeticOperators.has(operator) &&
-          !comparisonOperators.has(operator) &&
+          !ARITHMETIC_OPERATORS.has(operator) &&
+          !COMPARISON_OPERATORS.has(operator) &&
           operator !== SyntaxKind.AmpersandAmpersandToken &&
           operator !== SyntaxKind.BarBarToken &&
           operator !== SyntaxKind.QuestionQuestionToken
@@ -414,7 +385,7 @@ export async function validateAiFunction(
       }
 
       if (
-        !permittedSyntaxKinds.has(node.kind) &&
+        !PERMITTED_SYNTAX_KINDS.has(node.kind) &&
         !isToken(node) &&
         !isSourceFile(node) &&
         !isVariableStatement(node) &&
