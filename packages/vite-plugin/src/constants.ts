@@ -12,6 +12,15 @@ export const GENERATED_FUNCTION_TEMP_PREFIX = 'ai-lambda-';
 export const GENERATED_FUNCTION_FILE = 'generated.ts';
 export const GENERATED_FUNCTION_VARIABLE = '__generated';
 
+const NO_EXTERNAL_RULE = 'No external dependencies.';
+const NO_MUTATIONS_RULE = 'No mutations.';
+const NO_ADDITIONAL_STATEMENTS_RULE = 'No additional variables or statements.';
+const ROUNDING_RULE = 'Use arithmetic for numeric changes and Math.round, Math.floor or Math.ceil for rounding.';
+const STRING_CHECK_RULE = 'Use includes or localeCompare for string checks.';
+const SCHEMA_FIELDS_RULE = 'Only access fields defined in the supplied schema.';
+const COMMON_RULES = [NO_EXTERNAL_RULE, NO_MUTATIONS_RULE, NO_ADDITIONAL_STATEMENTS_RULE];
+const MATH_STRING_METHODS = ['localeCompare', 'includes', 'round', 'floor', 'ceil'];
+
 export const aiFunctionSpecs: Record<string, AIFunctionSpec> = {
   sortAi: {
     kind: 'sort',
@@ -27,12 +36,10 @@ export const aiFunctionSpecs: Record<string, AIFunctionSpec> = {
       'Return a negative number when a comes first.',
       'Return zero when equivalent.',
       'Return a positive number when b comes first.',
-      'Only access fields defined in the supplied schema.',
+      SCHEMA_FIELDS_RULE,
       'Use arithmetic for numeric comparisons.',
       'Use localeCompare with numeric:true and sensitivity:"base" for natural string sorting.',
-      'No external dependencies.',
-      'No mutations.',
-      'No additional variables or statements.'
+      ...COMMON_RULES
     ]
   },
   filterAi: {
@@ -48,12 +55,10 @@ export const aiFunctionSpecs: Record<string, AIFunctionSpec> = {
     rules: [
       'Return true when the item should be kept.',
       'Return false when the item should be removed.',
-      'Only access fields defined in the supplied schema.',
+      SCHEMA_FIELDS_RULE,
       'Use comparison operators for numeric, boolean and date comparisons.',
       'Use includes or localeCompare with sensitivity:"base" for case-insensitive string matching.',
-      'No external dependencies.',
-      'No mutations.',
-      'No additional variables or statements.'
+      ...COMMON_RULES
     ]
   },
   mapAi: {
@@ -66,16 +71,14 @@ export const aiFunctionSpecs: Record<string, AIFunctionSpec> = {
     signature: '(item) => ...',
     parameters: ['item'],
     globals: ['Math'],
-    allowedMethods: ['localeCompare', 'includes', 'round', 'floor', 'ceil'],
+    allowedMethods: MATH_STRING_METHODS,
     rules: [
       'Return the transformed item as an object literal.',
       'Use the spread operator to keep unchanged fields, for example ({...item, unitPrice: value}).',
-      'Only access fields defined in the supplied schema.',
-      'Use arithmetic for numeric changes and Math.round, Math.floor or Math.ceil for rounding.',
-      'Use includes or localeCompare for string checks.',
-      'No external dependencies.',
-      'No mutations.',
-      'No additional variables or statements.'
+      SCHEMA_FIELDS_RULE,
+      ROUNDING_RULE,
+      STRING_CHECK_RULE,
+      ...COMMON_RULES
     ]
   },
   reduceAi: {
@@ -88,18 +91,16 @@ export const aiFunctionSpecs: Record<string, AIFunctionSpec> = {
     signature: '(acc, item) => ...',
     parameters: ['acc', 'item'],
     globals: ['Math'],
-    allowedMethods: ['localeCompare', 'includes', 'round', 'floor', 'ceil'],
+    allowedMethods: MATH_STRING_METHODS,
     rules: [
       'Return the updated accumulator for the current item.',
       'Use acc as the current accumulator and item as the current array item.',
       'Only access fields defined in the supplied item or accumulator schemas.',
       'For object accumulators, return a new object and spread acc to keep unchanged fields.',
       'For array accumulators, return a new array such as [...acc, item]; do not mutate acc.',
-      'Use arithmetic for numeric changes and Math.round, Math.floor or Math.ceil for rounding.',
-      'Use includes or localeCompare for string checks.',
-      'No external dependencies.',
-      'No mutations.',
-      'No additional variables or statements.'
+      ROUNDING_RULE,
+      STRING_CHECK_RULE,
+      ...COMMON_RULES
     ]
   }
 };

@@ -14,59 +14,71 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+interface InsightRule {
+  matches: (error: string) => boolean;
+  insight: () => string;
+}
+
+const insightRules: InsightRule[] = [
+  {
+    matches: (error) => error.toLowerCase().includes('cached'),
+    insight: () => translate('removeInvalidCache')
+  },
+  {
+    matches: (error) => error.includes('Missing OpenAI API key'),
+    insight: () => translate('addApiKey', { configFile: AI_CONFIG_FILE })
+  },
+  {
+    matches: (error) => error.includes('Invalid ') && error.includes(' invocation'),
+    insight: () => translate('invalidInvocationInsight')
+  },
+  {
+    matches: (error) =>
+      error.includes('items must be an array') ||
+      (error.includes('Unsupported ') && error.includes('field type')) ||
+      error.includes('could not infer') ||
+      error.includes('initialValue must have'),
+    insight: () => translate('unsupportedTypesInsight')
+  },
+  {
+    matches: (error) => error.includes('Unable to type-check'),
+    insight: () => translate('typeCheckInsight', { tsconfigFile: TSCONFIG_FILE })
+  },
+  {
+    matches: (error) =>
+      error.startsWith('OpenAI error 401') || error.startsWith('OpenAI error 403'),
+    insight: () => translate('invalidCredentialsInsight')
+  },
+  {
+    matches: (error) => error.startsWith('OpenAI error 429'),
+    insight: () => translate('rateLimitInsight')
+  },
+  {
+    matches: (error) => error.startsWith('OpenAI error 5'),
+    insight: () => translate('serverErrorInsight')
+  },
+  {
+    matches: (error) =>
+      (error.includes('invalid ') && error.includes(' JSON')) ||
+      error.includes('returned no generated text') ||
+      error.includes('response is missing a'),
+    insight: () => translate('invalidResponseInsight')
+  },
+  {
+    matches: (error) =>
+      error.includes('generated') ||
+      error.includes('Forbidden') ||
+      error.includes('permitted') ||
+      error.includes('Only '),
+    insight: () => translate('validationInsight')
+  }
+];
+
 function getInsight(error: string, stage: 'configuration' | 'transform'): string {
-  if (error.toLowerCase().includes('cached')) {
-    return translate('removeInvalidCache');
-  }
+  const rule = insightRules.find((candidate) => candidate.matches(error));
 
-  if (error.includes('Missing OpenAI API key')) {
-    return translate('addApiKey', { configFile: AI_CONFIG_FILE });
-  }
-
-  if (error.includes('Invalid ') && error.includes(' invocation')) {
-    return translate('invalidInvocationInsight');
-  }
-
-  if (
-    error.includes('items must be an array') ||
-    error.includes('Unsupported ') && error.includes('field type') ||
-    error.includes('could not infer') ||
-    error.includes('initialValue must have')
-  ) {
-    return translate('unsupportedTypesInsight');
-  }
-
-  if (error.includes('Unable to type-check')) {
-    return translate('typeCheckInsight', { tsconfigFile: TSCONFIG_FILE });
-  }
-
-  if (error.startsWith('OpenAI error 401') || error.startsWith('OpenAI error 403')) {
-    return translate('invalidCredentialsInsight');
-  }
-
-  if (error.startsWith('OpenAI error 429')) {
-    return translate('rateLimitInsight');
-  }
-
-  if (error.startsWith('OpenAI error 5')) {
-    return translate('serverErrorInsight');
-  }
-
-  if (
-    error.includes('invalid ') && error.includes(' JSON') ||
-    error.includes('returned no generated text') ||
-    error.includes('response is missing a')
-  ) {
-    return translate('invalidResponseInsight');
-  }
-
-  if (
-    error.includes('generated') ||
-    error.includes('Forbidden') ||
-    error.includes('permitted') ||
-    error.includes('Only ')
-  ) {
-    return translate('validationInsight');
+  if (rule) {
+    return rule.insight();
   }
 
   if (stage === 'transform' && !error.startsWith('OpenAI error ')) {

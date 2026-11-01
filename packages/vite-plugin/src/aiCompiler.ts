@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
-    API,
-    type Snapshot
+  API,
+  type Snapshot
 } from 'typescript/unstable/sync';
 import type { Plugin } from 'vite';
 import {
@@ -88,6 +88,13 @@ export function aiCompiler(): Plugin {
     return api;
   }
 
+  function disposeTypeScript(): void {
+    initialSnapshot?.dispose();
+    initialSnapshot = undefined;
+    api?.close();
+    api = undefined;
+  }
+
   return {
     name: VITE_PLUGIN_NAME,
     enforce: 'pre',
@@ -131,9 +138,7 @@ export function aiCompiler(): Plugin {
         config.cache ??= true;
         config.generatedDir ||= DEFAULT_GENERATED_DIR;
       } catch (error) {
-        initialSnapshot?.dispose();
-        api.close();
-        api = undefined;
+        disposeTypeScript();
         throw createConfigurationError(error, root);
       }
     },
@@ -149,18 +154,7 @@ export function aiCompiler(): Plugin {
       );
     },
 
-    closeBundle() {
-      initialSnapshot?.dispose();
-      initialSnapshot = undefined;
-      api?.close();
-      api = undefined;
-    },
-
-    closeWatcher() {
-      initialSnapshot?.dispose();
-      initialSnapshot = undefined;
-      api?.close();
-      api = undefined;
-    }
+    closeBundle: disposeTypeScript,
+    closeWatcher: disposeTypeScript
   };
 }
