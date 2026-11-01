@@ -51,8 +51,7 @@ const cart: CartItem[] = [
 ];
 
 // Natural language becomes native JavaScript.
-const sortedCart = sortAi(
-  cart,
+const sortedCart = cart.sortAi(
   'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
 );
 
@@ -74,36 +73,105 @@ const date = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium'
 });
 
-for (const item of sortedCart) {
-  const row = document.createElement('tr');
-  const values = [
-    { value: item.product, className: 'product' },
-    { value: item.category },
-    { value: String(item.quantity) },
-    { value: currency.format(item.unitPrice) },
-    {
-      value: currency.format(item.quantity * item.unitPrice),
-      className: 'line-total'
-    },
-    { value: date.format(item.addedAt) },
-    {
-      value: item.inStock ? 'In stock' : 'Out of stock',
-      className: item.inStock
-        ? 'availability'
-        : 'availability out-of-stock'
+const renderCart = (items: readonly CartItem[]) => {
+  tableBody.replaceChildren();
+
+  for (const item of items) {
+    const row = document.createElement('tr');
+    const values = [
+      { value: item.product, className: 'product' },
+      { value: item.category },
+      { value: String(item.quantity) },
+      { value: currency.format(item.unitPrice) },
+      {
+        value: currency.format(item.quantity * item.unitPrice),
+        className: 'line-total'
+      },
+      { value: date.format(item.addedAt) },
+      {
+        value: item.inStock ? 'In stock' : 'Out of stock',
+        className: item.inStock
+          ? 'availability'
+          : 'availability out-of-stock'
+      }
+    ];
+
+    for (const { value, className } of values) {
+      const cell = document.createElement('td');
+      cell.textContent = value;
+
+      if (className) {
+        cell.className = className;
+      }
+
+      row.append(cell);
     }
-  ];
 
-  for (const { value, className } of values) {
-    const cell = document.createElement('td');
-    cell.textContent = value;
-
-    if (className) {
-      cell.className = className;
-    }
-
-    row.append(cell);
+    tableBody.append(row);
   }
+};
 
-  tableBody.append(row);
+const pipelines = [
+  {
+    label: 'Accessories, then sort',
+    run: () =>
+      cart
+        .filter((item) => item.category === 'Accessories')
+        .sortAi(
+          'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
+        )
+  },
+  {
+    label: 'Sort, then 10% off',
+    run: () =>
+      cart
+        .sortAi(
+          'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
+        )
+        .map((item) => ({
+          ...item,
+          unitPrice: Math.round(item.unitPrice * 90) / 100
+        }))
+  },
+  {
+    label: 'In stock, sort, then 10% off',
+    run: () =>
+      cart
+        .filter((item) => item.inStock)
+        .sortAi(
+          'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
+        )
+        .map((item) => ({
+          ...item,
+          unitPrice: Math.round(item.unitPrice * 90) / 100
+        }))
+  }
+];
+
+const pipelineButtons = document.querySelector<HTMLDivElement>(
+  '#pipelines'
+);
+
+if (!pipelineButtons) {
+  throw new Error('Missing pipeline buttons container');
 }
+
+for (const { label, run } of pipelines) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = label;
+  button.setAttribute('aria-pressed', 'false');
+
+  button.addEventListener('click', () => {
+    for (const other of pipelineButtons.querySelectorAll('button')) {
+      other.setAttribute('aria-pressed', 'false');
+    }
+
+    button.setAttribute('aria-pressed', 'true');
+    renderCart(run());
+  });
+
+  pipelineButtons.append(button);
+}
+
+renderCart(sortedCart);

@@ -87,6 +87,35 @@ section {
   font-size: 0.9rem;
 }
 
+.pipeline-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.pipeline-buttons button {
+  padding: 8px 14px;
+  border: 1px solid #c9d8cc;
+  border-radius: 999px;
+  background: #fff;
+  color: #17211d;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pipeline-buttons button:hover {
+  border-color: #397a58;
+}
+
+.pipeline-buttons button[aria-pressed="true"] {
+  border-color: #397a58;
+  background: #397a58;
+  color: #fff;
+}
+
 .table-wrap {
   overflow-x: auto;
 }

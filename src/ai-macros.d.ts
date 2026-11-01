@@ -1,6 +1,5 @@
 declare module '*.css';
 
-declare function sortAi<T>(
-  items: readonly T[],
-  instruction: string
-): T[];
+interface Array<T> {
+  sortAi(instruction: string): T[];
+}

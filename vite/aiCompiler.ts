@@ -6,6 +6,18 @@ import { inferSchema } from './comparator/inferSchema.ts';
 import { generateComparator } from './openai/generateComparator.ts';
 import type { AIConfig } from './types.ts';
 
+function isSortAiCall(
+  node: ts.Node
+): node is ts.CallExpression & {
+  expression: ts.PropertyAccessExpression;
+} {
+  return (
+    ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.name.text === 'sortAi'
+  );
+}
+
 export function aiCompiler(): Plugin {
   let config: AIConfig;
   let root: string;
@@ -87,11 +99,7 @@ export function aiCompiler(): Plugin {
       let hasSortAiCall = false;
 
       function findSortAiCall(node: ts.Node): void {
-        if (
-          ts.isCallExpression(node) &&
-          ts.isIdentifier(node.expression) &&
-          node.expression.text === 'sortAi'
-        ) {
+        if (isSortAiCall(node)) {
           hasSortAiCall = true;
           return;
         }
@@ -150,18 +158,14 @@ export function aiCompiler(): Plugin {
       }[] = [];
 
       async function visit(node: ts.Node): Promise<void> {
-        if (
-          ts.isCallExpression(node) &&
-          ts.isIdentifier(node.expression) &&
-          node.expression.text === 'sortAi'
-        ) {
-          const [items, instructionNode] = node.arguments;
+        if (isSortAiCall(node)) {
+          const instructionNode = node.arguments[0];
+          const items = node.expression.expression;
 
           if (
-            !items ||
             !instructionNode ||
             !ts.isStringLiteral(instructionNode) ||
-            node.arguments.length !== 2
+            node.arguments.length !== 1
           ) {
             throw new Error(
               `Invalid sortAi() invocation in ${id}`
@@ -177,10 +181,18 @@ export function aiCompiler(): Plugin {
             schema
           );
 
+          const receiver = items.getText(ast);
+          const isPostfixReceiver =
+            ts.isIdentifier(items) ||
+            ts.isPropertyAccessExpression(items) ||
+            ts.isElementAccessExpression(items) ||
+            ts.isCallExpression(items) ||
+            ts.isParenthesizedExpression(items);
+
           replacements.push({
             start: node.getStart(ast),
             end: node.end,
-            value: `${items.getText(ast)}.toSorted(${comparator})`
+            value: `${isPostfixReceiver ? receiver : `(${receiver})`}.toSorted(${comparator})`
           });
 
           return;
