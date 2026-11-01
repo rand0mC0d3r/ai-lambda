@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { Plugin, ResolvedConfig } from 'vite';
+import { createLogger, type Plugin, type ResolvedConfig } from 'vite';
 import { translate } from '../src/translations/en.js';
 
 export async function createProject(
@@ -42,7 +42,7 @@ export async function callConfigResolved(
   if (!hook) throw new Error(translate('missingConfigResolvedHook'));
 
   const handler = typeof hook === 'function' ? hook : hook.handler;
-  await handler.call(plugin, { root } as ResolvedConfig);
+  await handler.call(plugin, { root, logger: createLogger() } as ResolvedConfig);
 }
 
 export function callCloseBundle(plugin: Plugin, watchMode = false): void {

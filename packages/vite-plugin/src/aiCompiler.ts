@@ -12,6 +12,7 @@ import {
 } from './constants.js';
 import { readAiConfig } from './config.js';
 import { createConfigurationError } from './errorContext.js';
+import { AIPluginError } from './errors.js';
 import { completedAiCallCount, formatBuildSummary, resetAiCallReport } from './reporting/aiCallReport.js';
 import { translate } from './translations/en.js';
 import { transformModule } from './transform/transformModule.js';
@@ -113,7 +114,7 @@ export function aiCompiler(): Plugin {
 
   function getApi(): API {
     if (!api) {
-      throw new Error(translate('typescriptApiNotInitialized'));
+      throw new AIPluginError(translate('typescriptApiNotInitialized'), 'type_check');
     }
 
     return api;
@@ -151,17 +152,18 @@ export function aiCompiler(): Plugin {
         const project = initialSnapshot.getProject(tsconfigPath);
 
         if (!project) {
-          throw new Error(translate('unableToLoadTypeScriptProject', {
+          throw new AIPluginError(translate('unableToLoadTypeScriptProject', {
             tsconfigPath
-          }));
+          }), 'type_check');
         }
 
         const diagnostics =
           project.program.getConfigFileParsingDiagnostics();
 
         if (diagnostics.length) {
-          throw new Error(
-            diagnostics.map((diagnostic) => diagnostic.text).join('\n')
+          throw new AIPluginError(
+            diagnostics.map((diagnostic) => diagnostic.text).join('\n'),
+            'type_check'
           );
         }
 

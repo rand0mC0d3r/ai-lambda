@@ -9,6 +9,7 @@ import type {
   AIFunctionParameterSchema,
   ResultShape
 } from '../aiFunctions.js';
+import { AIPluginError } from '../errors.js';
 import { translate } from '../translations/en.js';
 
 function getSimpleType(type: Type): string | undefined {
@@ -47,12 +48,13 @@ function inferFields(
     const fieldType = fieldTypes[0];
 
     if (!fieldType || fieldTypes.some((variant) => variant !== fieldType)) {
-      throw new Error(
+      throw new AIPluginError(
         translate('unsupportedFieldType', {
           method,
           propertyName: property.name,
           type: checker.typeToString(propertyType)
-        })
+        }),
+        'unsupported_type'
       );
     }
 
@@ -71,7 +73,7 @@ function getItemType(
   const itemType = itemsType && getNumberIndexValueType(checker, itemsType);
 
   if (!itemType) {
-    throw new Error(translate('itemsMustBeArray', { method }));
+    throw new AIPluginError(translate('itemsMustBeArray', { method }), 'unsupported_type');
   }
 
   return itemType;
@@ -136,7 +138,7 @@ export function inferAccumulatorSchema(
     initialType && checker.getNonNullableType(initialType);
 
   if (!accumulatorType) {
-    throw new Error(translate('cannotInferInitialValueType', { method }));
+    throw new AIPluginError(translate('cannotInferInitialValueType', { method }), 'unsupported_type');
   }
 
   const simpleType = getSimpleType(accumulatorType);
@@ -151,7 +153,7 @@ export function inferAccumulatorSchema(
     const elementType = checker.getNonNullableType(numberIndexValueType);
 
     if (!elementType) {
-      throw new Error(translate('cannotInferArrayAccumulatorType', { method }));
+      throw new AIPluginError(translate('cannotInferArrayAccumulatorType', { method }), 'unsupported_type');
     }
 
     const simpleElementType = getSimpleType(elementType);
@@ -163,7 +165,7 @@ export function inferAccumulatorSchema(
     const elementFields = inferFields(checker, elementType, initialValue, method);
 
     if (!Object.keys(elementFields).length) {
-      throw new Error(translate('unsupportedArrayInitialValue', { method }));
+      throw new AIPluginError(translate('unsupportedArrayInitialValue', { method }), 'unsupported_type');
     }
 
     return { kind: 'array', elementType: 'object', elementFields };
@@ -172,7 +174,7 @@ export function inferAccumulatorSchema(
   const fields = inferFields(checker, accumulatorType, initialValue, method);
 
   if (!Object.keys(fields).length) {
-    throw new Error(translate('unsupportedInitialValue', { method }));
+    throw new AIPluginError(translate('unsupportedInitialValue', { method }), 'unsupported_type');
   }
 
   return { kind: 'object', fields };

@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import type { API } from 'typescript/unstable/sync';
 import path from 'node:path';
-import { createLogger, type Logger } from 'vite';
+import type { Logger } from 'vite';
 import type {
   AIFunctionParameterSchema,
   AIFunctionSpec,
@@ -65,7 +65,7 @@ function parseCachedJson(
   try {
     return JSON.parse(cached);
   } catch {
-    logger.warn(`Ignoring unreadable cache file ${cacheFile}; regenerating.`);
+    logger.warn(translate('unreadableCacheFile', { cacheFile }));
     return undefined;
   }
 }
@@ -118,7 +118,10 @@ async function fetchWithRetry(
       }
 
       const delay = OPENAI_RETRY_BASE_DELAY_MS * 2 ** attempt;
-      logger.warn(`OpenAI request failed: ${describeError(error)}. Retrying in ${delay}ms.`);
+      logger.warn(translate('openAiRetryNetwork', {
+        message: describeError(error),
+        delay
+      }));
       await wait(delay);
       continue;
     }
@@ -132,7 +135,7 @@ async function fetchWithRetry(
     }
 
     const delay = getRetryDelayMs(response, attempt);
-    logger.warn(`OpenAI returned ${response.status}. Retrying in ${delay}ms.`);
+    logger.warn(translate('openAiRetryStatus', { status: response.status, delay }));
     await response.body?.cancel().catch(() => undefined);
     await wait(delay);
   }
@@ -147,9 +150,9 @@ export function generateAiFunction(
   instruction: string,
   schema: Record<string, string>,
   api: API,
-  parameterSchemas?: ParameterSchemas,
-  resultShape?: ResultShape,
-  logger: Logger = createLogger()
+  parameterSchemas: ParameterSchemas | undefined,
+  resultShape: ResultShape | undefined,
+  logger: Logger
 ): Promise<string> {
   const cacheKey = hash(JSON.stringify({
     instruction,
@@ -240,12 +243,58 @@ function completeCall(
     durationMs: performance.now() - call.startedAt,
     attempts: trace.attempts,
     usage: trace.usage,
-    costUsd: trace.usage ? estimateCostUsd(call.model, trace.usage) : 0,
+    costUsd: trace.usage ? estimateCostUsd(call.model, trace.usage) : undefined,
     errorMessage: call.errorMessage
   };
 
   finishAiCall(record);
   logger.info(`   ${formatCallLine(record)}`);
+}
+
+async function readCachedFunction(
+  cacheFile: string,
+  spec: AIFunctionSpec,
+  schema: Record<string, string>,
+  api: API,
+  parameterSchemas: ParameterSchemas | undefined,
+  resultShape: ResultShape | undefined,
+  logger: Logger
+): Promise<string | undefined> {
+  const cached = await readCache(cacheFile);
+  if (cached === undefined) return undefined;
+
+  const cachedJson = parseCachedJson(cached, cacheFile, logger);
+  if (cachedJson === undefined) return undefined;
+
+  const cachedFunction = getGeneratedFunction(cachedJson, spec);
+
+  if (cachedFunction === undefined) {
+    logger.warn(translate('invalidCacheRegenerating', {
+      cacheFile,
+      reason: translate('invalidCachedFunction', { role: spec.role })
+    }));
+    return undefined;
+  }
+
+  try {
+    await validateAiFunction(
+      cachedFunction,
+      schema,
+      spec,
+      api,
+      parameterSchemas,
+      resultShape
+    );
+  } catch (error) {
+    // A stale cache entry (e.g. produced before a validator change) should be replaced, not fail the build.
+    logger.warn(translate('invalidCacheRegenerating', {
+      cacheFile,
+      reason: describeError(error)
+    }));
+    return undefined;
+  }
+
+  return cachedFunction;
 }
 
 async function compileAiFunction(
@@ -262,34 +311,23 @@ async function compileAiFunction(
   logger: Logger
 ): Promise<string> {
   if (config.cache) {
-    const cached = await readCache(cacheFile);
-    const cachedJson = cached === undefined
-      ? undefined
-      : parseCachedJson(cached, cacheFile, logger);
+    const cachedFunction = await readCachedFunction(
+      cacheFile,
+      spec,
+      schema,
+      api,
+      parameterSchemas,
+      resultShape,
+      logger
+    );
 
-    if (cachedJson !== undefined) {
-      const cachedFunction = getGeneratedFunction(cachedJson, spec);
-
-      if (cachedFunction === undefined) {
-        throw new AIPluginError(translate('invalidCachedFunction', {
-          role: spec.role
-        }), 'invalid_cache');
-      }
-
-      await validateAiFunction(
-        cachedFunction,
-        schema,
-        spec,
-        api,
-        parameterSchemas,
-        resultShape
-      );
+    if (cachedFunction !== undefined) {
       trace.cached = true;
       return cachedFunction;
     }
   }
 
-  logger.info(`\n🤖 AI compiling ${spec.method}(): "${instruction}"`);
+  logger.info(translate('aiCompiling', { method: spec.method, instruction }));
 
   const { response, attempts } = await fetchWithRetry(
     OPENAI_RESPONSES_URL,
@@ -415,7 +453,7 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
     }
   }
 
-  logger.info(`✅ Generated: ${generated}`);
+  logger.info(translate('generatedFunction', { generated }));
 
   return generated;
 }

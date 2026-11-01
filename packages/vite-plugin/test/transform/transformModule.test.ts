@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { aiCompiler } from '../../src/aiCompiler.js';
+import { AIPluginError } from '../../src/errors.js';
 import * as generation from '../../src/openai/generateAiFunction.js';
 import { aiFunctionSpecs } from '../../src/constants.js';
 import {
@@ -93,6 +94,26 @@ const result = products
         undefined,
         expect.anything()
       );
+    } finally {
+      callCloseBundle(plugin);
+      await cleanup();
+    }
+  });
+
+  it('compiles AI calls nested inside a reduceAi initial value', async () => {
+    mockGeneration();
+    const source = `${methods}
+const total = products.reduceAi('sum', products.filterAi('active').length);
+`;
+    const { plugin, sourcePath, cleanup } = await initializedPlugin(source);
+
+    try {
+      const transformed = await callTransform(plugin, source, sourcePath) as { code: string };
+
+      expect(transformed.code).toContain(
+        'const total = products.reduce((acc, item) => acc + item.price, products.filter((item) => item.active).length);'
+      );
+      expect(generation.generateAiFunction).toHaveBeenCalledTimes(2);
     } finally {
       callCloseBundle(plugin);
       await cleanup();
@@ -349,7 +370,7 @@ const result = products.filterAi('keep active items');
 `;
     const { plugin, sourcePath, cleanup } = await initializedPlugin(source);
     vi.spyOn(generation, 'generateAiFunction').mockRejectedValue(
-      new Error('Forbidden property access: privateField')
+      new AIPluginError('Forbidden property access: privateField', 'invalid_generated')
     );
     const callOffset = source.indexOf('products.filterAi');
     const callLine = source.slice(0, callOffset).split('\n').length;

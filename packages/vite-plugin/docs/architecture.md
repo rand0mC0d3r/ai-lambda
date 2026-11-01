@@ -75,7 +75,7 @@ Notes on the flow:
 
 - Only the method tail is rewritten. The plugin replaces the text from `items.end` to `node.end`, so the rest of the file keeps its original text and layout.
 - The source map is hires, so stack traces and breakpoints still point at the original TypeScript lines.
-- Cache hits are still validated. A cached function that cannot be parsed or no longer matches the schema raises an error; it is not regenerated automatically. Delete the cache file to force a new generation.
+- Cache hits are still validated. A cached function that cannot be read or no longer passes validation is logged with a warning and regenerated, rather than failing the build. Delete the cache file to force a new generation.
 - For `mapAi<U>` and `reduceAi<U>` with an object type `U`, validation also checks the result shape: every required field must be returned, and object literal keys must be declared in `U`. Value types and scalar or array results are not checked.
 - Each call maps to a native method by its spec: `sortAi` to `toSorted`, `filterAi` to `filter`, `findAi` to `find`, `someAi` to `some`, `mapAi` to `map`, and `reduceAi` to `reduce`. The spec also sets the allowed helper methods and output role for the generated function.
 

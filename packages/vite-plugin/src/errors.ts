@@ -1,5 +1,10 @@
 export type AIErrorCode =
-  | 'invalid_cache'
+  | 'invalid_config'
+  | 'missing_api_key'
+  | 'invalid_invocation'
+  | 'unsupported_type'
+  | 'type_check'
+  | 'invalid_generated'
   | 'openai_http'
   | 'openai_network'
   | 'openai_response';

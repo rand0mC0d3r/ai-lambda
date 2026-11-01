@@ -5,8 +5,10 @@ import {
   DEFAULT_GENERATED_DIR,
   DEFAULT_MODEL
 } from './constants.js';
+import { AIPluginError } from './errors.js';
 import { translate } from './translations/en.js';
 import type { AIConfig } from './types.js';
+import { isRecord } from './utils.js';
 
 const SUPPORTED_KEYS = ['apiKey', 'model', 'cache', 'generatedDir'];
 
@@ -20,11 +22,12 @@ export async function readAiConfig(
   try {
     raw = JSON.parse(source);
   } catch (error) {
-    throw new Error(
+    throw new AIPluginError(
       translate('invalidAiConfigJson', {
         configFile: AI_CONFIG_FILE,
         cause: error instanceof Error ? error.message : String(error)
       }),
+      'invalid_config',
       { cause: error }
     );
   }
@@ -34,7 +37,7 @@ export async function readAiConfig(
 
 export function validateAiConfig(raw: unknown, root: string): AIConfig {
   if (!isRecord(raw)) {
-    throw new Error(translate('aiConfigNotObject', { configFile: AI_CONFIG_FILE }));
+    throw new AIPluginError(translate('aiConfigNotObject', { configFile: AI_CONFIG_FILE }), 'invalid_config');
   }
 
   const unknownKeys = Object.keys(raw).filter(
@@ -42,33 +45,35 @@ export function validateAiConfig(raw: unknown, root: string): AIConfig {
   );
 
   if (unknownKeys.length) {
-    throw new Error(
+    throw new AIPluginError(
       translate('unknownAiConfigKeys', {
         configFile: AI_CONFIG_FILE,
         keys: unknownKeys.join(', ')
-      })
+      }),
+      'invalid_config'
     );
   }
 
   if (raw.apiKey === undefined) {
-    throw new Error(translate('missingApiKey'));
+    throw new AIPluginError(translate('missingApiKey'), 'missing_api_key');
   }
 
   if (!isNonEmptyString(raw.apiKey)) {
-    throw new Error(translate('invalidApiKey', { configFile: AI_CONFIG_FILE }));
+    throw new AIPluginError(translate('invalidApiKey', { configFile: AI_CONFIG_FILE }), 'invalid_config');
   }
 
   if (raw.model !== undefined && !isNonEmptyString(raw.model)) {
-    throw new Error(translate('invalidModel', { configFile: AI_CONFIG_FILE }));
+    throw new AIPluginError(translate('invalidModel', { configFile: AI_CONFIG_FILE }), 'invalid_config');
   }
 
   if (raw.cache !== undefined && typeof raw.cache !== 'boolean') {
-    throw new Error(translate('invalidCache', { configFile: AI_CONFIG_FILE }));
+    throw new AIPluginError(translate('invalidCache', { configFile: AI_CONFIG_FILE }), 'invalid_config');
   }
 
   if (raw.generatedDir !== undefined && !isCacheDirInsideRoot(raw.generatedDir, root)) {
-    throw new Error(
-      translate('invalidGeneratedDir', { configFile: AI_CONFIG_FILE })
+    throw new AIPluginError(
+      translate('invalidGeneratedDir', { configFile: AI_CONFIG_FILE }),
+      'invalid_config'
     );
   }
 
@@ -78,10 +83,6 @@ export function validateAiConfig(raw: unknown, root: string): AIConfig {
     cache: raw.cache ?? true,
     generatedDir: raw.generatedDir ?? DEFAULT_GENERATED_DIR
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isNonEmptyString(value: unknown): value is string {

@@ -4,7 +4,7 @@ import { hash, isRecord } from '../src/utils.js';
 describe('utility functions', () => {
   it('recognizes non-null objects as records', () => {
     expect(isRecord({ value: 1 })).toBe(true);
-    expect(isRecord([])).toBe(true);
+    expect(isRecord([])).toBe(false);
     expect(isRecord(null)).toBe(false);
     expect(isRecord('value')).toBe(false);
   });

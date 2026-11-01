@@ -16,6 +16,7 @@ import {
   PROTECTED_PROPERTIES
 } from '../constants.js';
 import type { ResultShape } from '../aiFunctions.js';
+import { AIPluginError } from '../errors.js';
 import { translate } from '../translations/en.js';
 import type { Node } from 'typescript/unstable/ast';
 import {
@@ -54,6 +55,43 @@ interface ParameterInfo {
 }
 
 export async function validateAiFunction(
+  code: string,
+  schema: Record<string, string>,
+  spec: AIFunctionSpec,
+  api: API,
+  parameterSchemas?: Record<string, AIFunctionParameterSchema>,
+  resultShape?: ResultShape
+): Promise<void> {
+  try {
+    await checkGeneratedFunction(code, schema, spec, api, parameterSchemas, resultShape);
+  } catch (error) {
+    if (error instanceof AIPluginError) throw error;
+
+    throw new AIPluginError(
+      error instanceof Error ? error.message : String(error),
+      'invalid_generated',
+      { cause: error }
+    );
+  }
+}
+
+function parameterTypes(
+  parameterSchema: AIFunctionParameterSchema | undefined,
+  schema: Record<string, string>
+): Record<string, string> {
+  if (!parameterSchema) return schema;
+
+  switch (parameterSchema.kind) {
+    case 'scalar':
+      return {};
+    case 'object':
+      return parameterSchema.fields;
+    case 'array':
+      return parameterSchema.elementFields ?? {};
+  }
+}
+
+async function checkGeneratedFunction(
   code: string,
   schema: Record<string, string>,
   spec: AIFunctionSpec,
@@ -127,13 +165,7 @@ export async function validateAiFunction(
             fields: parameterSchemas
               ? parameterSchema?.kind === 'object' ? parameterSchema.fields : {}
               : schema,
-            types: parameterSchema?.kind === 'scalar'
-              ? {}
-              : parameterSchema?.kind === 'object'
-                ? parameterSchema.fields
-                : parameterSchema?.kind === 'array'
-                  ? parameterSchema.elementFields ?? {}
-                  : schema,
+            types: parameterTypes(parameterSchema, schema),
             scalarType: parameterSchema?.kind === 'scalar'
               ? parameterSchema.type
               : undefined
@@ -461,10 +493,15 @@ export async function validateAiFunction(
       checkResultShape(initializer.body, resultShape);
     }
   } finally {
-    snapshot?.dispose();
-    if (snapshot) {
-      api.updateSnapshot({ closeFiles: [tempFile] }).dispose();
+    try {
+      snapshot?.dispose();
+      if (snapshot) {
+        api.updateSnapshot({ closeFiles: [tempFile] }).dispose();
+      }
+    } catch {
+      // A failed snapshot release must not replace the validation result or error.
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
     }
-    await rm(tempDir, { recursive: true, force: true });
   }
 }

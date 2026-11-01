@@ -24,12 +24,14 @@ const schema = { active: 'boolean' };
 const instruction = 'Keep active items';
 
 describe('generateAiFunction', () => {
+  const logger = createLogger();
   let root: string | undefined;
   let fetchMock: ReturnType<typeof vi.fn>;
   const apis: API[] = [];
 
   afterEach(async () => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     for (const compilerApi of apis) compilerApi.close();
     apis.length = 0;
     if (root) await rm(root, { recursive: true, force: true });
@@ -65,7 +67,10 @@ describe('generateAiFunction', () => {
       aiFunctionSpecs.filterAi,
       instruction,
       schema,
-      api()
+      api(),
+      undefined,
+      undefined,
+      logger
     );
     const second = await generateAiFunction(
       config,
@@ -73,7 +78,10 @@ describe('generateAiFunction', () => {
       aiFunctionSpecs.filterAi,
       instruction,
       schema,
-      api()
+      api(),
+      undefined,
+      undefined,
+      logger
     );
 
     expect(first).toBe('(item) => item.active');
@@ -128,13 +136,15 @@ describe('generateAiFunction', () => {
         instruction,
         schema,
         api(),
-        parameterSchemas
+        parameterSchemas,
+        undefined,
+        logger
       )
     ).resolves.toBe('(acc, item) => acc + 1');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('rejects malformed cached functions', async () => {
+  it('regenerates malformed cached functions with a warning', async () => {
     const projectRoot = await createRoot();
     const cacheKey = hash(JSON.stringify({
       instruction,
@@ -146,6 +156,10 @@ describe('generateAiFunction', () => {
     const cacheDir = path.join(projectRoot, '.cache');
     await mkdir(cacheDir, { recursive: true });
     await writeFile(path.join(cacheDir, `${cacheKey}.json`), '{"predicate":2}');
+    fetchMock.mockResolvedValue(
+      response({ output_text: JSON.stringify({ predicate: '(item) => item.active' }) })
+    );
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
 
     await expect(
       generateAiFunction(
@@ -154,9 +168,14 @@ describe('generateAiFunction', () => {
         aiFunctionSpecs.filterAi,
         instruction,
         schema,
-        api()
+        api(),
+        undefined,
+        undefined,
+        logger
       )
-    ).rejects.toThrow('Invalid cached predicate');
+    ).resolves.toBe('(item) => item.active');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it('surfaces service errors and malformed response payloads', async () => {
@@ -169,7 +188,10 @@ describe('generateAiFunction', () => {
         aiFunctionSpecs.filterAi,
         instruction,
         schema,
-        api()
+        api(),
+        undefined,
+        undefined,
+        logger
       )
     ).rejects.toThrow('OpenAI error 500: upstream failed');
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -182,7 +204,10 @@ describe('generateAiFunction', () => {
         aiFunctionSpecs.filterAi,
         instruction,
         schema,
-        api()
+        api(),
+        undefined,
+        undefined,
+        logger
       )
     ).rejects.toThrow('OpenAI returned invalid predicate JSON');
 
@@ -194,7 +219,10 @@ describe('generateAiFunction', () => {
         aiFunctionSpecs.filterAi,
         instruction,
         schema,
-        api()
+        api(),
+        undefined,
+        undefined,
+        logger
       )
     ).rejects.toThrow('OpenAI response is missing a predicate string');
   });
@@ -212,7 +240,10 @@ describe('generateAiFunction', () => {
         aiFunctionSpecs.sortAi,
         instruction,
         schema,
-        api()
+        api(),
+        undefined,
+        undefined,
+        logger
       )
     ).resolves.toBe('(a, b) => 0');
     await expect(readFile(path.join(projectRoot, '.cache'))).rejects.toThrow();
@@ -236,7 +267,10 @@ describe('generateAiFunction', () => {
         aiFunctionSpecs.filterAi,
         instruction,
         schema,
-        api()
+        api(),
+        undefined,
+        undefined,
+        logger
       )
     ).resolves.toBe('(item) => item.active');
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -252,7 +286,10 @@ describe('generateAiFunction', () => {
       aiFunctionSpecs.filterAi,
       instruction,
       schema,
-      api()
+      api(),
+      undefined,
+      undefined,
+      logger
     );
 
     await expect(promise).rejects.toMatchObject({
@@ -273,7 +310,10 @@ describe('generateAiFunction', () => {
         aiFunctionSpecs.filterAi,
         instruction,
         schema,
-        api()
+        api(),
+        undefined,
+        undefined,
+        logger
       )
     ).rejects.toMatchObject({ code: 'openai_http', status: 401 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -294,7 +334,6 @@ describe('generateAiFunction', () => {
     fetchMock.mockResolvedValue(
       response({ output_text: JSON.stringify({ predicate: '(item) => item.active' }) })
     );
-    const logger = createLogger();
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
 
     await expect(
@@ -324,8 +363,8 @@ describe('generateAiFunction', () => {
     );
 
     const results = await Promise.all([
-      generateAiFunction(config, projectRoot, aiFunctionSpecs.filterAi, instruction, schema, api()),
-      generateAiFunction(config, projectRoot, aiFunctionSpecs.filterAi, instruction, schema, api())
+      generateAiFunction(config, projectRoot, aiFunctionSpecs.filterAi, instruction, schema, api(), undefined, undefined, logger),
+      generateAiFunction(config, projectRoot, aiFunctionSpecs.filterAi, instruction, schema, api(), undefined, undefined, logger)
     ]);
 
     expect(results).toEqual(['(item) => item.active', '(item) => item.active']);
@@ -344,7 +383,10 @@ describe('generateAiFunction', () => {
       aiFunctionSpecs.filterAi,
       instruction,
       schema,
-      api()
+      api(),
+      undefined,
+      undefined,
+      logger
     );
 
     const files = await readdir(path.join(projectRoot, '.cache'));

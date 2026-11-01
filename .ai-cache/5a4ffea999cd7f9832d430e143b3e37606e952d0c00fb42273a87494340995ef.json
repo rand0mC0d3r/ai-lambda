@@ -1,3 +1,3 @@
 {
-  "comparator": "(a,b) => a.id - b.id"
+  "comparator": "(a, b) => a.id - b.id"
 }

@@ -15,12 +15,18 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function getCodeInsight(error: unknown): string | undefined {
-  if (!(error instanceof AIPluginError)) return undefined;
-
+function getCodeInsight(error: AIPluginError): string | undefined {
   switch (error.code) {
-    case 'invalid_cache':
-      return translate('removeInvalidCache');
+    case 'missing_api_key':
+      return translate('addApiKey', { configFile: AI_CONFIG_FILE });
+    case 'invalid_invocation':
+      return translate('invalidInvocationInsight');
+    case 'unsupported_type':
+      return translate('unsupportedTypesInsight');
+    case 'type_check':
+      return translate('typeCheckInsight', { tsconfigFile: TSCONFIG_FILE });
+    case 'invalid_generated':
+      return translate('validationInsight');
     case 'openai_network':
       return translate('transformInsight');
     case 'openai_response':
@@ -36,60 +42,19 @@ function getCodeInsight(error: unknown): string | undefined {
       if (status >= 500) return translate('serverErrorInsight');
       return undefined;
     }
+    case 'invalid_config':
+      return undefined;
   }
 }
-
-interface InsightRule {
-  matches: (error: string) => boolean;
-  insight: () => string;
-}
-
-const insightRules: InsightRule[] = [
-  {
-    matches: (error) => error.includes('Missing OpenAI API key'),
-    insight: () => translate('addApiKey', { configFile: AI_CONFIG_FILE })
-  },
-  {
-    matches: (error) => error.includes('Invalid ') && error.includes(' invocation'),
-    insight: () => translate('invalidInvocationInsight')
-  },
-  {
-    matches: (error) =>
-      error.includes('items must be an array') ||
-      (error.includes('Unsupported ') && error.includes('field type')) ||
-      error.includes('could not infer') ||
-      error.includes('initialValue must have'),
-    insight: () => translate('unsupportedTypesInsight')
-  },
-  {
-    matches: (error) => error.includes('Unable to type-check'),
-    insight: () => translate('typeCheckInsight', { tsconfigFile: TSCONFIG_FILE })
-  },
-  {
-    matches: (error) =>
-      error.includes('generated') ||
-      error.includes('Forbidden') ||
-      error.includes('permitted') ||
-      error.includes('Only '),
-    insight: () => translate('validationInsight')
-  }
-];
 
 function getInsight(
   error: unknown,
-  cause: string,
   stage: 'configuration' | 'transform'
 ): string {
-  const codeInsight = getCodeInsight(error);
+  if (error instanceof AIPluginError) {
+    const codeInsight = getCodeInsight(error);
 
-  if (codeInsight) {
-    return codeInsight;
-  }
-
-  const rule = insightRules.find((candidate) => candidate.matches(cause));
-
-  if (rule) {
-    return rule.insight();
+    if (codeInsight) return codeInsight;
   }
 
   const isOpenAiHttpError =
@@ -115,7 +80,7 @@ export function createConfigurationError(error: unknown, root: string): Error {
       tsconfigFile: TSCONFIG_FILE,
       configFile: AI_CONFIG_FILE,
       cause,
-      insight: getInsight(error, cause, 'configuration')
+      insight: getInsight(error, 'configuration')
     }),
     { cause: error }
   );
@@ -141,7 +106,7 @@ export function createTransformError(
       model: context.model,
       instruction: JSON.stringify(instruction),
       cause,
-      insight: getInsight(error, cause, 'transform')
+      insight: getInsight(error, 'transform')
     }),
     { cause: error }
   );

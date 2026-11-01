@@ -10,23 +10,30 @@ import {
   isStringLiteral
 } from 'typescript/unstable/ast/is';
 import type { API } from 'typescript/unstable/sync';
-import { createLogger, type Logger } from 'vite';
+import type { Logger } from 'vite';
 import { aiFunctionSpecs } from '../constants.js';
 import {
   inferAccumulatorSchema,
   inferResultShape,
   inferSchema
 } from '../functions/inferSchema.js';
+import { AIPluginError } from '../errors.js';
 import { createTransformError } from '../errorContext.js';
 import { generateAiFunction } from '../openai/generateAiFunction.js';
 import { translate } from '../translations/en.js';
 import type { AIConfig } from '../types.js';
 
-function isAiCall(
-  node: Node
-): node is CallExpression & {
+type AiCall = CallExpression & {
   expression: PropertyAccessExpression;
-} {
+};
+
+type Edit = {
+  start: number;
+  end: number;
+  value: string;
+};
+
+function isAiCall(node: Node): node is AiCall {
   return (
     isCallExpression(node) &&
     isPropertyAccessExpression(node.expression) &&
@@ -41,13 +48,9 @@ export async function transformModule(
   tsconfigPath: string,
   config: AIConfig,
   root: string,
-  logger: Logger = createLogger()
+  logger: Logger
 ) {
-  if (
-    id.includes('node_modules') ||
-    !/\.[jt]sx?$/.test(id) ||
-    !Object.keys(aiFunctionSpecs).some((method) => source.includes(method))
-  ) {
+  if (!Object.keys(aiFunctionSpecs).some((method) => source.includes(method))) {
     return null;
   }
 
@@ -61,25 +64,35 @@ export async function transformModule(
     const programSource = project?.program.getSourceFile(id);
 
     if (!project || !programSource) {
-      throw new Error(translate('unableToTypeCheckAiCall', { id }));
+      throw new AIPluginError(translate('unableToTypeCheckAiCall', { id }), 'type_check');
     }
 
     const activeProject = project;
     const activeSource = programSource;
 
     if (programSource.text !== source) {
-      throw new Error(
-        translate('transformedSourceMismatch', { id })
-      );
+      throw new AIPluginError(translate('transformedSourceMismatch', { id }), 'type_check');
     }
 
-    const replacements: {
-      start: number;
-      end: number;
-      value: string;
-    }[] = [];
+    const pending: (() => Promise<Edit[]>)[] = [];
 
-    async function visit(node: Node): Promise<void> {
+    function wrapError(error: unknown, node: AiCall, spec: (typeof aiFunctionSpecs)[string], instruction: string | undefined): Error {
+      const location = activeSource.getLineAndCharacterOfPosition(
+        node.getStart(activeSource)
+      );
+      return createTransformError(error, {
+        file: id,
+        line: location.line + 1,
+        column: location.character + 1,
+        method: spec.method,
+        instruction: instruction ?? '',
+        model: config.model
+      });
+    }
+
+    // Collects every AI call synchronously (including calls nested in receivers
+    // and initial values) so generation can run concurrently afterwards.
+    function visit(node: Node): void {
       if (isAiCall(node)) {
         const spec = aiFunctionSpecs[node.expression.name.text];
         const instructionNode = node.arguments[0];
@@ -91,18 +104,22 @@ export async function transformModule(
         const acceptsTypeArguments =
           spec.kind === 'map' || spec.kind === 'reduce';
 
+        let generate: () => Promise<string>;
+
         try {
           if (
             instruction === undefined ||
             node.arguments.length !== (spec.kind === 'reduce' ? 2 : 1) ||
-            (node.typeArguments && !acceptsTypeArguments)
+            (node.typeArguments && !acceptsTypeArguments) ||
+            (spec.kind === 'reduce' && !initialValue)
           ) {
-            throw new Error(
-              translate('invalidInvocation', {
-                method: spec.method,
-                id
-              })
-            );
+          throw new AIPluginError(
+            translate('invalidInvocation', {
+              method: spec.method,
+              id
+            }),
+            'invalid_invocation'
+          );
           }
 
           const schema = inferSchema(
@@ -134,7 +151,8 @@ export async function transformModule(
               node.typeArguments?.[0]
             )
             : undefined;
-          const generated = await generateAiFunction(
+
+          generate = () => generateAiFunction(
             config,
             root,
             spec,
@@ -145,62 +163,59 @@ export async function transformModule(
             resultShape,
             logger
           );
-
-          const typeArguments = acceptsTypeArguments && node.typeArguments
-            ? `<${node.typeArguments.map((type) => type.getText(programSource)).join(', ')}>`
-            : '';
-          const reducerArguments = spec.kind === 'reduce'
-            ? `, ${initialValue?.getText(programSource)}`
-            : '';
-
-          // Rewrite only the method tail so nested receiver calls stay intact.
-          replacements.push({
-            start: items.end,
-            end: node.end,
-            value: `.${spec.replacementMethod}${typeArguments}(${generated}${reducerArguments})`
-          });
         } catch (error) {
-          const location = activeSource.getLineAndCharacterOfPosition(
-            node.getStart(activeSource)
-          );
-          throw createTransformError(error, {
-            file: id,
-            line: location.line + 1,
-            column: location.character + 1,
-            method: spec.method,
-            instruction: instruction ?? '',
-            model: config.model
-          });
+          throw wrapError(error, node, spec, instruction);
         }
 
-        await visit(items);
+        const typeArguments = acceptsTypeArguments && node.typeArguments
+          ? `<${node.typeArguments.map((type) => type.getText(programSource)).join(', ')}>`
+          : '';
+
+        pending.push(async () => {
+          let generated: string;
+          try {
+            generated = await generate();
+          } catch (error) {
+            throw wrapError(error, node, spec, instruction);
+          }
+
+          const method = `.${spec.replacementMethod}${typeArguments}`;
+
+          // reduceAi keeps its initial value in place so nested AI calls inside
+          // it are rewritten by their own edits instead of being overwritten.
+          if (spec.kind === 'reduce' && initialValue) {
+            return [
+              {
+                start: items.end,
+                end: initialValue.getStart(programSource),
+                value: `${method}(${generated}, `
+              },
+              { start: initialValue.end, end: node.end, value: ')' }
+            ];
+          }
+
+          return [{ start: items.end, end: node.end, value: `${method}(${generated})` }];
+        });
+
+        visit(items);
+        if (initialValue) visit(initialValue);
         return;
       }
 
-      const children: Node[] = [];
       node.forEachChild((child) => {
-        children.push(child);
+        visit(child);
       });
-
-      for (const child of children) {
-        await visit(child);
-      }
     }
 
-    await visit(programSource);
+    visit(programSource);
 
-    if (!replacements.length) return null;
+    if (!pending.length) return null;
 
+    const edits = (await Promise.all(pending.map((task) => task()))).flat();
     const output = new MagicString(source);
 
-    for (const replacement of replacements.sort(
-      (a, b) => b.start - a.start
-    )) {
-      output.overwrite(
-        replacement.start,
-        replacement.end,
-        replacement.value
-      );
+    for (const edit of edits.sort((a, b) => b.start - a.start)) {
+      output.overwrite(edit.start, edit.end, edit.value);
     }
 
     return {
