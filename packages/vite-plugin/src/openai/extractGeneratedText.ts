@@ -1,8 +1,9 @@
 import { isRecord } from '../utils.js';
+import { translate } from '../translations/en.js';
 
 export function extractGeneratedText(result: unknown): string {
   if (!isRecord(result)) {
-    throw new Error('OpenAI returned an invalid response');
+    throw new Error(translate('invalidOpenAiResponse'));
   }
 
   if (
@@ -48,7 +49,7 @@ export function extractGeneratedText(result: unknown): string {
   if (output.trim()) return output;
   if (refusals.length) {
     throw new Error(
-      `OpenAI refused AI function generation: ${refusals.join(' ')}`
+      translate('openAiRefusal', { refusal: refusals.join(' ') })
     );
   }
 
@@ -61,6 +62,8 @@ export function extractGeneratedText(result: unknown): string {
   ].filter(Boolean);
 
   throw new Error(
-    `OpenAI returned no generated text${details.length ? ` (${details.join(', ')})` : ''}`
+    translate('noGeneratedText', {
+      details: details.length ? ` (${details.join(', ')})` : ''
+    })
   );
 }

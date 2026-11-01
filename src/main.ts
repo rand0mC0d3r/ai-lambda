@@ -1,6 +1,7 @@
 
 import { cart, type CartItem } from './cart';
 import { pipelines } from './pipelines';
+import { english } from './translations/en';
 import './style.css';
 
 const tableBody = document.querySelector<HTMLTableSectionElement>(
@@ -8,7 +9,7 @@ const tableBody = document.querySelector<HTMLTableSectionElement>(
 );
 
 if (!tableBody) {
-  throw new Error('Missing shopping cart table body');
+  throw new Error(english.missingShoppingCartTableBody);
 }
 
 const currency = new Intl.NumberFormat(undefined, {
@@ -62,7 +63,7 @@ const pipelineButtons = document.querySelector<HTMLDivElement>(
 );
 
 if (!pipelineButtons) {
-  throw new Error('Missing pipeline buttons container');
+  throw new Error(english.missingPipelineButtonsContainer);
 }
 
 for (const { label, run } of pipelines) {

@@ -33,6 +33,7 @@ import {
     createTransformError
 } from './errorContext.js';
 import { generateAiFunction } from './openai/generateAiFunction.js';
+import { translate } from './translations/en.js';
 import type { AIConfig } from './types.js';
 
 function isAiCall(
@@ -112,7 +113,7 @@ export function aiCompiler(): Plugin {
 
   function getApi(): API {
     if (!api) {
-      throw new Error('TypeScript API is not initialized');
+      throw new Error(translate('typescriptApiNotInitialized'));
     }
 
     return api;
@@ -136,7 +137,9 @@ export function aiCompiler(): Plugin {
         const project = initialSnapshot.getProject(tsconfigPath);
 
         if (!project) {
-          throw new Error(`Unable to load TypeScript project ${tsconfigPath}`);
+          throw new Error(translate('unableToLoadTypeScriptProject', {
+            tsconfigPath
+          }));
         }
 
         const diagnostics =
@@ -152,7 +155,7 @@ export function aiCompiler(): Plugin {
         config = JSON.parse(await readFile(configPath, 'utf8'));
 
         if (!config.apiKey) {
-          throw new Error('Missing OpenAI API key in .ai-rc.json');
+          throw new Error(translate('missingApiKey'));
         }
 
         config.model ||= DEFAULT_MODEL;
@@ -186,7 +189,7 @@ export function aiCompiler(): Plugin {
         const programSource = project?.program.getSourceFile(id);
 
         if (!project || !programSource) {
-          throw new Error(`Unable to type-check AI call in ${id}`);
+          throw new Error(translate('unableToTypeCheckAiCall', { id }));
         }
 
         const activeProject = project;
@@ -194,7 +197,7 @@ export function aiCompiler(): Plugin {
 
         if (programSource.text !== source) {
           throw new Error(
-            `Unable to type-check transformed AI call in ${id}: source does not match the TypeScript project`
+            translate('transformedSourceMismatch', { id })
           );
         }
 
@@ -236,7 +239,10 @@ export function aiCompiler(): Plugin {
                   spec.kind !== 'reduce')
               ) {
                 throw new Error(
-                  `Invalid ${spec.method}() invocation in ${id}`
+                  translate('invalidInvocation', {
+                    method: spec.method,
+                    id
+                  })
                 );
               }
 

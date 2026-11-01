@@ -15,6 +15,7 @@ import {
   PERMITTED_SYNTAX_KINDS,
   PROTECTED_PROPERTIES
 } from '../constants.js';
+import { translate } from '../translations/en.js';
 import type { Node } from 'typescript/unstable/ast';
 import {
   isArrowFunction,
@@ -67,7 +68,7 @@ export async function validateAiFunction(
     const source = project?.program.getSourceFile(tempFile);
 
     if (!project || !source) {
-      throw new Error('Unable to parse generated JavaScript function');
+      throw new Error(translate('unableToParseGeneratedFunction'));
     }
 
     const diagnostics = project.program.getSyntacticDiagnostics(tempFile);
@@ -77,13 +78,13 @@ export async function validateAiFunction(
         (diagnostic) => diagnostic.category === DiagnosticCategory.Error
       )
     ) {
-      throw new Error('Invalid generated JavaScript syntax');
+      throw new Error(translate('invalidGeneratedSyntax'));
     }
 
     const declaration = source.statements[0];
 
     if (!isVariableStatement(declaration)) {
-      throw new Error('Invalid generated function declaration');
+      throw new Error(translate('invalidGeneratedDeclaration'));
     }
 
     const initializer =
@@ -101,7 +102,9 @@ export async function validateAiFunction(
       isBlock(initializer.body)
     ) {
       throw new Error(
-        `Generated function must be an expression-bodied (${spec.parameters.join(', ')}) arrow function`
+        translate('invalidArrowFunction', {
+          parameters: spec.parameters.join(', ')
+        })
       );
     }
 
@@ -237,7 +240,7 @@ export async function validateAiFunction(
         node.kind === SyntaxKind.ArrayLiteralExpression &&
         spec.kind !== 'reduce'
       ) {
-        throw new Error('Array literals are only permitted in reduceAi reducers');
+        throw new Error(translate('arrayLiteralNotAllowed'));
       }
 
       if (isPropertyAssignment(node)) {
@@ -248,11 +251,13 @@ export async function validateAiFunction(
           name.kind !== SyntaxKind.StringLiteral &&
           name.kind !== SyntaxKind.NumericLiteral
         ) {
-          throw new Error('Computed object properties are not permitted');
+          throw new Error(translate('computedPropertyNotAllowed'));
         }
 
         if (PROTECTED_PROPERTIES.has(name.text)) {
-          throw new Error(`Forbidden object property: ${name.text}`);
+          throw new Error(translate('forbiddenObjectProperty', {
+            name: name.text
+          }));
         }
 
         inspect(node.initializer);
@@ -260,7 +265,7 @@ export async function validateAiFunction(
       }
 
       if (isShorthandPropertyAssignment(node)) {
-        throw new Error('Shorthand object properties are not permitted');
+        throw new Error(translate('shorthandPropertyNotAllowed'));
       }
 
       if (isSpreadAssignment(node)) {
@@ -269,7 +274,7 @@ export async function validateAiFunction(
           parameterKinds[node.expression.text] !== 'object'
         ) {
           throw new Error(
-            'Object spread is only permitted on object parameters'
+            translate('objectSpreadNotAllowed')
           );
         }
       }
@@ -279,19 +284,21 @@ export async function validateAiFunction(
           !isIdentifier(node.expression) ||
           parameterKinds[node.expression.text] !== 'array'
         ) {
-          throw new Error('Array spread is only permitted on array parameters');
+          throw new Error(translate('arraySpreadNotAllowed'));
         }
       }
 
       if (isIdentifier(node) && !allowed.has(node.text)) {
-        throw new Error(`Forbidden identifier: ${node.text}`);
+        throw new Error(translate('forbiddenIdentifier', {
+          name: node.text
+        }));
       }
 
       if (
         node.kind === SyntaxKind.ThisKeyword ||
         node.kind === SyntaxKind.SuperKeyword
       ) {
-        throw new Error('this and super are not permitted');
+        throw new Error(translate('thisAndSuperNotAllowed'));
       }
 
       if (isPropertyAccessExpression(node)) {
@@ -324,7 +331,7 @@ export async function validateAiFunction(
           PROTECTED_PROPERTIES.has(property) ||
           (!isField && !isMathMethod && !isStringMethod)
         ) {
-          throw new Error(`Forbidden property access: ${property}`);
+          throw new Error(translate('forbiddenPropertyAccess', { property }));
         }
 
         if (isField) {
@@ -339,7 +346,9 @@ export async function validateAiFunction(
         !isAllowedCall(node)
       ) {
         throw new Error(
-          `Only ${spec.allowedMethods.join(', ')} calls are permitted`
+          translate('onlyAllowedCalls', {
+            methods: spec.allowedMethods.join(', ')
+          })
         );
       }
 
@@ -350,14 +359,14 @@ export async function validateAiFunction(
           ARITHMETIC_OPERATORS.has(operator) &&
           (!isNumericExpression(node.left) || !isNumericExpression(node.right))
         ) {
-          throw new Error('Arithmetic operators require numeric expressions');
+          throw new Error(translate('arithmeticRequiresNumbers'));
         }
 
         if (
           operator === SyntaxKind.EqualsEqualsToken ||
           operator === SyntaxKind.ExclamationEqualsToken
         ) {
-          throw new Error('Loose equality operators are not permitted');
+          throw new Error(translate('looseEqualityNotAllowed'));
         }
 
         if (
@@ -368,7 +377,9 @@ export async function validateAiFunction(
           operator !== SyntaxKind.QuestionQuestionToken
         ) {
           throw new Error(
-            `Forbidden JavaScript operator: ${SyntaxKind[operator]}`
+            translate('forbiddenOperator', {
+              operator: SyntaxKind[operator]
+            })
           );
         }
       }
@@ -380,7 +391,9 @@ export async function validateAiFunction(
         node.operator !== SyntaxKind.ExclamationToken
       ) {
         throw new Error(
-          `Forbidden JavaScript operator: ${SyntaxKind[node.operator]}`
+          translate('forbiddenOperator', {
+            operator: SyntaxKind[node.operator]
+          })
         );
       }
 
@@ -393,7 +406,9 @@ export async function validateAiFunction(
         !isVariableDeclaration(node)
       ) {
         throw new Error(
-          `Forbidden JavaScript syntax: ${SyntaxKind[node.kind]}`
+          translate('forbiddenSyntax', {
+            syntax: SyntaxKind[node.kind]
+          })
         );
       }
 

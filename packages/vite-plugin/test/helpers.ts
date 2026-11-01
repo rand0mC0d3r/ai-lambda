@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Plugin, ResolvedConfig } from 'vite';
+import { translate } from '../src/translations/en.js';
 
 export async function createProject(
   source: string,
@@ -38,7 +39,7 @@ export async function callConfigResolved(
 ): Promise<void> {
   const hook = plugin.configResolved;
 
-  if (!hook) throw new Error('Plugin has no configResolved hook');
+  if (!hook) throw new Error(translate('missingConfigResolvedHook'));
 
   const handler = typeof hook === 'function' ? hook : hook.handler;
   await handler.call(plugin, { root } as ResolvedConfig);
@@ -51,7 +52,7 @@ export async function callTransform(
 ): Promise<unknown> {
   const hook = plugin.transform;
 
-  if (!hook) throw new Error('Plugin has no transform hook');
+  if (!hook) throw new Error(translate('missingTransformHook'));
 
   const handler = typeof hook === 'function' ? hook : hook.handler;
   return handler.call(plugin, source, id);

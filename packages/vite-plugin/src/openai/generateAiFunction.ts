@@ -13,6 +13,7 @@ import { validateAiFunction } from '../comparator/validateAiFunction.js';
 import type { AIConfig } from '../types.js';
 import { hash, isRecord } from '../utils.js';
 import { extractGeneratedText } from './extractGeneratedText.js';
+import { translate } from '../translations/en.js';
 
 type ParameterSchemas = Record<string, AIFunctionParameterSchema>;
 
@@ -57,7 +58,9 @@ export async function generateAiFunction(
         : undefined;
 
       if (typeof cachedFunction !== 'string') {
-        throw new Error(`Invalid cached ${spec.role}`);
+        throw new Error(translate('invalidCachedFunction', {
+          role: spec.role
+        }));
       }
 
       await validateAiFunction(
@@ -122,7 +125,10 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
 
   if (!response.ok) {
     throw new Error(
-      `OpenAI error ${response.status}: ${await response.text()}`
+      translate('openAiHttpError', {
+        status: response.status,
+        body: await response.text()
+      })
     );
   }
 
@@ -133,7 +139,9 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
   try {
     parsed = JSON.parse(output);
   } catch (error) {
-    throw new Error(`OpenAI returned invalid ${spec.role} JSON`, {
+    throw new Error(translate('invalidGeneratedJson', {
+      role: spec.role
+    }), {
       cause: error
     });
   }
@@ -144,7 +152,7 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
 
   if (typeof generated !== 'string') {
     throw new Error(
-      `OpenAI response is missing a ${spec.role} string`
+      translate('missingGeneratedFunction', { role: spec.role })
     );
   }
 

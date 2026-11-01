@@ -5,6 +5,7 @@ import {
 } from 'typescript/unstable/sync';
 import type { Expression, TypeNode } from 'typescript/unstable/ast';
 import type { AIFunctionParameterSchema } from '../aiFunctions.js';
+import { translate } from '../translations/en.js';
 
 function getSimpleType(type: Type): string | undefined {
   if (type.flags & TypeFlags.StringLike) return 'string';
@@ -46,7 +47,11 @@ function inferFields(
 
     if (!fieldType || fieldTypes.some((variant) => variant !== fieldType)) {
       throw new Error(
-        `Unsupported ${method}() field type for "${propertyName}": ${checker.typeToString(propertyType)}`
+        translate('unsupportedFieldType', {
+          method,
+          propertyName,
+          type: checker.typeToString(propertyType)
+        })
       );
     }
 
@@ -69,7 +74,7 @@ export function inferSchema(
   const itemType = numberIndex?.valueType;
 
   if (!itemType) {
-    throw new Error(`${method}() items must be an array`);
+    throw new Error(translate('itemsMustBeArray', { method }));
   }
 
   return inferFields(checker, itemType, items, method);
@@ -86,13 +91,13 @@ export function inferAccumulatorSchema(
   );
 
   if (!initialType) {
-    throw new Error(`${method}() could not infer initialValue type`);
+    throw new Error(translate('cannotInferInitialValueType', { method }));
   }
 
   const accumulatorType = checker.getNonNullableType(initialType);
 
   if (!accumulatorType) {
-    throw new Error(`${method}() could not infer initialValue type`);
+    throw new Error(translate('cannotInferInitialValueType', { method }));
   }
 
   const simpleType = getSimpleType(accumulatorType);
@@ -109,7 +114,7 @@ export function inferAccumulatorSchema(
     const elementType = checker.getNonNullableType(numberIndex.valueType);
 
     if (!elementType) {
-      throw new Error(`${method}() could not infer array accumulator type`);
+      throw new Error(translate('cannotInferArrayAccumulatorType', { method }));
     }
 
     const simpleElementType = getSimpleType(elementType);
@@ -134,7 +139,7 @@ export function inferAccumulatorSchema(
     }
 
     throw new Error(
-      `${method}() array initialValue must have supported scalar or object elements`
+      translate('unsupportedArrayInitialValue', { method })
     );
   }
 
@@ -142,7 +147,7 @@ export function inferAccumulatorSchema(
 
   if (!Object.keys(fields).length) {
     throw new Error(
-      `${method}() initialValue must have a supported scalar or object type`
+      translate('unsupportedInitialValue', { method })
     );
   }
 
