@@ -3,7 +3,8 @@ import type { API } from 'typescript/unstable/sync';
 import path from 'node:path';
 import type {
   AIFunctionParameterSchema,
-  AIFunctionSpec
+  AIFunctionSpec,
+  ResultShape
 } from '../aiFunctions.js';
 import {
   COMPILER_VERSION,
@@ -41,7 +42,8 @@ export async function generateAiFunction(
   instruction: string,
   schema: Record<string, string>,
   api: API,
-  parameterSchemas?: ParameterSchemas
+  parameterSchemas?: ParameterSchemas,
+  resultShape?: ResultShape
 ): Promise<string> {
   const cacheKey = hash(JSON.stringify({
     instruction,
@@ -49,6 +51,8 @@ export async function generateAiFunction(
     model: config.model,
     compilerVersion: COMPILER_VERSION,
     ...(parameterSchemas ? { parameterSchemas } : {}),
+    // Keyed only when present so cache files for scalar and array results stay valid.
+    ...(resultShape ? { resultShape } : {}),
     // Sort keys stay unchanged so comparators cached before filterAi existed remain valid.
     ...(spec.kind === 'sort' ? {} : { kind: spec.kind })
   }));
@@ -73,7 +77,8 @@ export async function generateAiFunction(
         schema,
         spec,
         api,
-        parameterSchemas
+        parameterSchemas,
+        resultShape
       );
       return cachedFunction;
     }
@@ -163,7 +168,8 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
     schema,
     spec,
     api,
-    parameterSchemas
+    parameterSchemas,
+    resultShape
   );
 
   if (config.cache) {

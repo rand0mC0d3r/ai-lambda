@@ -15,6 +15,7 @@ import {
   PERMITTED_SYNTAX_KINDS,
   PROTECTED_PROPERTIES
 } from '../constants.js';
+import type { ResultShape } from '../aiFunctions.js';
 import { translate } from '../translations/en.js';
 import type { Node } from 'typescript/unstable/ast';
 import {
@@ -24,6 +25,7 @@ import {
   isCallExpression,
   isConditionalExpression,
   isIdentifier,
+  isObjectLiteralExpression,
   isParenthesizedExpression,
   isPropertyAccessExpression,
   isPropertyAssignment,
@@ -56,7 +58,8 @@ export async function validateAiFunction(
   schema: Record<string, string>,
   spec: AIFunctionSpec,
   api: API,
-  parameterSchemas?: Record<string, AIFunctionParameterSchema>
+  parameterSchemas?: Record<string, AIFunctionParameterSchema>,
+  resultShape?: ResultShape
 ): Promise<void> {
   const tempDir = await mkdtemp(
     path.join(tmpdir(), GENERATED_FUNCTION_TEMP_PREFIX)
@@ -226,6 +229,60 @@ export async function validateAiFunction(
       }
 
       return isMathMethod(expression, name.text) || isStringMethod(expression, name.text);
+    }
+
+    function addParameterFields(name: string, provided: Set<string>): void {
+      for (const field of Object.keys(parameterInfo.get(name)?.fields ?? {})) {
+        provided.add(field);
+      }
+    }
+
+    // Checks keys only; value types are not verified.
+    function checkResultShape(body: Node, shape: ResultShape): void {
+      let expression = body;
+
+      while (isParenthesizedExpression(expression)) {
+        expression = expression.expression;
+      }
+
+      const provided = new Set<string>();
+
+      if (
+        isIdentifier(expression) &&
+        parameterInfo.get(expression.text)?.kind === 'object'
+      ) {
+        addParameterFields(expression.text, provided);
+      } else if (isObjectLiteralExpression(expression)) {
+        for (const property of expression.properties) {
+          if (isSpreadAssignment(property)) {
+            if (isIdentifier(property.expression)) {
+              addParameterFields(property.expression.text, provided);
+            }
+          } else if (isPropertyAssignment(property)) {
+            const { name } = property;
+
+            if (name.kind === SyntaxKind.ComputedPropertyName) {
+              throw new Error(translate('computedPropertyNotAllowed'));
+            }
+
+            const key = name.text;
+
+            if (!Object.hasOwn(shape.fields, key)) {
+              throw new Error(translate('undeclaredResultField', { name: key }));
+            }
+
+            provided.add(key);
+          }
+        }
+      } else {
+        throw new Error(translate('resultNotObject'));
+      }
+
+      for (const field of Object.keys(shape.fields)) {
+        if (!provided.has(field) && !shape.optionalFields.includes(field)) {
+          throw new Error(translate('missingResultField', { name: field }));
+        }
+      }
     }
 
     function inspect(node: Node, parent?: Node): void {
@@ -399,6 +456,10 @@ export async function validateAiFunction(
     }
 
     inspect(initializer);
+
+    if (resultShape) {
+      checkResultShape(initializer.body, resultShape);
+    }
   } finally {
     snapshot?.dispose();
     if (snapshot) {

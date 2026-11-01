@@ -1,10 +1,14 @@
 import {
+  SymbolFlags,
   TypeFlags,
   type Checker,
   type Type
 } from 'typescript/unstable/sync';
 import type { Expression, TypeNode } from 'typescript/unstable/ast';
-import type { AIFunctionParameterSchema } from '../aiFunctions.js';
+import type {
+  AIFunctionParameterSchema,
+  ResultShape
+} from '../aiFunctions.js';
 import { translate } from '../translations/en.js';
 
 function getSimpleType(type: Type): string | undefined {
@@ -58,11 +62,11 @@ function inferFields(
   return schema;
 }
 
-export function inferSchema(
+function getItemType(
   checker: Checker,
   items: Expression,
   method: string
-): Record<string, string> {
+): Type {
   const itemsType = checker.getTypeAtLocation(items);
   const itemType = itemsType && getNumberIndexValueType(checker, itemsType);
 
@@ -70,7 +74,55 @@ export function inferSchema(
     throw new Error(translate('itemsMustBeArray', { method }));
   }
 
-  return inferFields(checker, itemType, items, method);
+  return itemType;
+}
+
+export function inferSchema(
+  checker: Checker,
+  items: Expression,
+  method: string
+): Record<string, string> {
+  return inferFields(
+    checker,
+    getItemType(checker, items, method),
+    items,
+    method
+  );
+}
+
+// Returns undefined for scalar and array results, which are not shape-checked.
+export function inferResultShape(
+  checker: Checker,
+  items: Expression,
+  method: string,
+  initialValue?: Expression,
+  explicitType?: TypeNode
+): ResultShape | undefined {
+  const locatedType = initialValue
+    ? checker.getTypeAtLocation(explicitType ?? initialValue)
+    : explicitType
+      ? checker.getTypeAtLocation(explicitType)
+      : getItemType(checker, items, method);
+  const resultType = locatedType && checker.getNonNullableType(locatedType);
+
+  if (
+    !resultType ||
+    getSimpleType(resultType) ||
+    getNumberIndexValueType(checker, resultType)
+  ) {
+    return undefined;
+  }
+
+  const properties = checker.getPropertiesOfType(resultType);
+
+  if (!properties.length) return undefined;
+
+  return {
+    fields: inferFields(checker, resultType, initialValue ?? items, method),
+    optionalFields: properties
+      .filter((property) => (property.flags & SymbolFlags.Optional) !== 0)
+      .map((property) => property.name)
+  };
 }
 
 export function inferAccumulatorSchema(

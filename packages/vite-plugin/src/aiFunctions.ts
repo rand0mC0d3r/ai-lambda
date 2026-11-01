@@ -12,6 +12,11 @@ export interface AIFunctionSpec {
   rules: readonly string[];
 }
 
+export interface ResultShape {
+  fields: Record<string, string>;
+  optionalFields: string[];
+}
+
 export type AIFunctionParameterSchema =
   | {
     kind: 'scalar';

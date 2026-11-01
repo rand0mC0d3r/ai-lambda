@@ -161,7 +161,7 @@ const revenue = orders
 ### Type arguments
 
 - `sortAi` returns a new array because it compiles to `toSorted`; the input is not mutated.
-- `mapAi<U>` and `reduceAi<U>` accept a type argument that describes the result to TypeScript. The plugin does **not** verify that the generated object matches `U` at runtime.
+- `mapAi<U>` and `reduceAi<U>` accept a type argument that describes the result to TypeScript. When `U` is an object type, the plugin checks the generated function at build time: every declared required field must be provided, and object literal keys must be declared in `U`. Value types are not verified, and scalar and array results are not checked.
 - For an empty array, pass an explicit type so `reduceAi` knows the accumulator type:
 
 ```ts
@@ -266,7 +266,7 @@ To force regeneration, delete the relevant file in `.ai-cache/` or the whole dir
 ## Known limitations
 
 - Only arrays of objects with `string`, `number`, `boolean`, or `Date` fields are supported. Nested objects and mixed unions are not.
-- `mapAi<U>` and `reduceAi<U>` generic arguments are trusted, not checked at runtime.
+- `mapAi<U>` and `reduceAi<U>` object results are checked for required and undeclared keys at build time only. Field value types are not verified, and scalar and array results are not checked.
 - The API key is only read from `.ai-rc.json`; there is no environment-variable fallback.
 - The key is required even when every function is cached.
 - `sortAi` needs `Array.prototype.toSorted` at runtime (or a polyfill).

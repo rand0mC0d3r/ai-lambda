@@ -149,4 +149,64 @@ describe('validateAiFunction', () => {
       )
     ).resolves.toBeUndefined();
   });
+
+  describe('declared result shape', () => {
+    const shape = {
+      fields: { price: 'number', name: 'string' },
+      optionalFields: ['name']
+    } as const;
+
+    async function checkResult(code: string, resultShape = shape) {
+      api?.close();
+      api = new API();
+      await validateAiFunction(
+        code,
+        { price: 'number', name: 'string' },
+        aiFunctionSpecs.mapAi,
+        api,
+        undefined,
+        resultShape
+      );
+    }
+
+    it('accepts results that provide every required field', async () => {
+      await checkResult('(item) => ({price: item.price})');
+      await checkResult('(item) => ({...item})');
+      await checkResult('(item) => ({...item, price: item.price * 2})');
+      await checkResult('(item) => item');
+    });
+
+    it('rejects results that omit a required field', async () => {
+      await expect(
+        checkResult('(item) => ({name: item.name})')
+      ).rejects.toThrow('Generated result is missing declared field: price');
+    });
+
+    it('rejects object literal keys the result type does not declare', async () => {
+      await expect(
+        checkResult('(item) => ({price: item.price, cost: item.price})')
+      ).rejects.toThrow('Generated result has undeclared field: cost');
+    });
+
+    it('treats optional fields as not required', async () => {
+      await checkResult('(item) => ({price: item.price})');
+    });
+
+    it('rejects non-object results when the result type is an object', async () => {
+      await expect(checkResult('(item) => item.price')).rejects.toThrow(
+        'Generated result must be an object literal or an object parameter'
+      );
+    });
+
+    it('skips the check when no result shape is supplied', async () => {
+      api?.close();
+      api = new API();
+      await validateAiFunction(
+        '(item) => item.price',
+        { price: 'number', name: 'string' },
+        aiFunctionSpecs.mapAi,
+        api
+      );
+    });
+  });
 });

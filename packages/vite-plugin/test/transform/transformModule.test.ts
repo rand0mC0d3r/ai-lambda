@@ -85,6 +85,7 @@ const result = products
         'active',
         { name: 'string', price: 'number', active: 'boolean' },
         expect.anything(),
+        undefined,
         undefined
       );
     } finally {
@@ -134,6 +135,7 @@ const summary = products.reduceAi<Summary>('summary', { total: 0, label: '' });
           note: 'string'
         },
         expect.anything(),
+        undefined,
         undefined
       );
       expect(generation.generateAiFunction).toHaveBeenNthCalledWith(
@@ -150,7 +152,8 @@ const summary = products.reduceAi<Summary>('summary', { total: 0, label: '' });
             kind: 'object',
             fields: expect.objectContaining({ price: 'number' })
           }
-        }
+        },
+        undefined
       );
       expect(generation.generateAiFunction).toHaveBeenNthCalledWith(
         3,
@@ -170,7 +173,8 @@ const summary = products.reduceAi<Summary>('summary', { total: 0, label: '' });
             kind: 'object',
             fields: expect.objectContaining({ name: 'string' })
           }
-        }
+        },
+        undefined
       );
       expect(generation.generateAiFunction).toHaveBeenNthCalledWith(
         4,
@@ -189,7 +193,8 @@ const summary = products.reduceAi<Summary>('summary', { total: 0, label: '' });
             kind: 'object',
             fields: expect.objectContaining({ name: 'string' })
           }
-        }
+        },
+        { fields: { total: 'number', label: 'string' }, optionalFields: [] }
       );
     } finally {
       callCloseBundle(plugin);

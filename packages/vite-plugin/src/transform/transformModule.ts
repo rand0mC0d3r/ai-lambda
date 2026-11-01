@@ -13,6 +13,7 @@ import type { API } from 'typescript/unstable/sync';
 import { aiFunctionSpecs } from '../constants.js';
 import {
   inferAccumulatorSchema,
+  inferResultShape,
   inferSchema
 } from '../functions/inferSchema.js';
 import { createTransformError } from '../errorContext.js';
@@ -122,6 +123,15 @@ export async function transformModule(
               item: { kind: 'object' as const, fields: schema }
             }
             : undefined;
+          const resultShape = acceptsTypeArguments
+            ? inferResultShape(
+              activeProject.checker,
+              items,
+              spec.method,
+              spec.kind === 'reduce' ? initialValue : undefined,
+              node.typeArguments?.[0]
+            )
+            : undefined;
           const generated = await generateAiFunction(
             config,
             root,
@@ -129,7 +139,8 @@ export async function transformModule(
             instruction,
             schema,
             api,
-            parameterSchemas
+            parameterSchemas,
+            resultShape
           );
 
           const typeArguments = acceptsTypeArguments && node.typeArguments
