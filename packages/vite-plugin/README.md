@@ -49,16 +49,15 @@ Keep the key and generated cache out of version control:
 
 The key is checked when the plugin starts, even if every generated function is cached. A cache hit does skip the OpenAI request.
 
-### Tell TypeScript about the methods
+### TypeScript declarations
 
-Add this declaration to a `.d.ts` file included by your project's `tsconfig.json`:
+The package provides TypeScript declarations for the array methods. If your
+application's TypeScript project does not otherwise load the plugin's types
+(for example, when `vite.config.ts` is excluded), add this reference to a
+`.d.ts` file included by your app's `tsconfig.json`:
 
 ```ts
-interface Array<T> {
-  sortAi(instruction: string): T[];
-  filterAi(instruction: string): T[];
-  mapAi<U = T>(instruction: string): U[];
-  reduceAi<U>(instruction: string, initialValue: U): U;
+/// <reference types="vite-plugin-ai-lambda" />
 }
 ```
 
