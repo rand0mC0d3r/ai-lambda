@@ -1,61 +1,7 @@
 
+import { cart, type CartItem } from './cart';
+import { pipelines } from './pipelines';
 import './style.css';
-
-interface CartItem {
-  id: number;
-  product: string;
-  category: string;
-  quantity: number;
-  unitPrice: number;
-  addedAt: Date;
-  inStock: boolean;
-}
-
-const cart: CartItem[] = [
-  {
-    id: 1,
-    product: 'USB Cable 2',
-    category: 'Accessories',
-    quantity: 3,
-    unitPrice: 8.99,
-    addedAt: new Date('2026-10-25'),
-    inStock: true
-  },
-  {
-    id: 2,
-    product: 'Monitor 27',
-    category: 'Displays',
-    quantity: 1,
-    unitPrice: 249.99,
-    addedAt: new Date('2026-10-20'),
-    inStock: true
-  },
-  {
-    id: 3,
-    product: 'USB Cable 10',
-    category: 'Accessories',
-    quantity: 2,
-    unitPrice: 5.99,
-    addedAt: new Date('2026-10-28'),
-    inStock: false
-  },
-  {
-    id: 4,
-    product: 'Keyboard',
-    category: 'Peripherals',
-    quantity: 1,
-    unitPrice: 89.99,
-    addedAt: new Date('2026-10-29'),
-    inStock: true
-  }
-];
-
-// Natural language becomes native JavaScript.
-const sortedCart = cart.sortAi(
-  'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
-);
-
-console.table(sortedCart);
 
 const tableBody = document.querySelector<HTMLTableSectionElement>(
   '#cart tbody'
@@ -111,65 +57,6 @@ const renderCart = (items: readonly CartItem[]) => {
   }
 };
 
-const pipelines = [
-  {
-    label: 'Accessories, then sort',
-    run: () =>
-      cart
-        .filter((item) => item.category === 'Accessories')
-        .sortAi(
-          'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
-        )
-  },
-  {
-    label: 'Sort, then 10% off',
-    run: () =>
-      cart
-        .sortAi(
-          'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
-        )
-        .map((item) => ({
-          ...item,
-          unitPrice: Math.round(item.unitPrice * 90) / 100
-        }))
-  },
-  {
-    label: 'In stock, sort, then 10% off',
-    run: () =>
-      cart
-        .filter((item) => item.inStock)
-        .sortAi(
-          'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
-        )
-        .map((item) => ({
-          ...item,
-          unitPrice: Math.round(item.unitPrice * 90) / 100
-        }))
-  },
-  {
-    label: 'Filter with AI, then sort',
-    run: () =>
-      cart
-        .filterAi(
-          'Keep only items that are in stock and have a unit price above 5 dollars.'
-        )
-        .sortAi(
-          'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
-        )
-  },
-  {
-    label: 'Map with AI, then sort',
-    run: () =>
-      cart
-        .mapAi(
-          'Apply a 10% discount to the unit price, rounded to two decimals, and keep all other fields.'
-        )
-        .sortAi(
-          'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
-        )
-  }
-];
-
 const pipelineButtons = document.querySelector<HTMLDivElement>(
   '#pipelines'
 );
@@ -196,4 +83,4 @@ for (const { label, run } of pipelines) {
   pipelineButtons.append(button);
 }
 
-renderCart(sortedCart);
+renderCart(cart);

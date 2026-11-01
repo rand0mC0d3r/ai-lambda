@@ -1,0 +1,3 @@
+{
+  "comparator": "(a,b)=>a.id-b.id"
+}
