@@ -35,6 +35,10 @@ describe('validateAiFunction', () => {
       '(item) => item.name.includes("pro")',
       'filterAi'
     );
+    await validator()(
+      '(item) => item.name.includes("pro")',
+      'findAi'
+    );
   });
 
   it('accepts reduce array expressions and accumulator schemas', async () => {

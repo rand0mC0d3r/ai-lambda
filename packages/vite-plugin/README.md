@@ -8,7 +8,7 @@
 
 Turn plain-English instructions into array operations at **Vite transform time**.
 
-Write `sortAi`, `filterAi`, `mapAi`, or `reduceAi`. The plugin asks OpenAI to generate a small JavaScript function during `vite` or `vite build`, validates it, and rewrites your call to a native array method. The browser never calls OpenAI.
+Write `sortAi`, `filterAi`, `findAi`, `mapAi`, or `reduceAi`. The plugin asks OpenAI to generate a small JavaScript function during `vite` or `vite build`, validates it, and rewrites your call to a native array method. The browser never calls OpenAI.
 
 ```ts
 const cheapestFirst = products.sortAi('Sort by price, lowest first.');
@@ -44,7 +44,7 @@ const cheapestFirst = products.toSorted((a, b) => a.price - b.price);
 
 ## Features
 
-- **Natural-language array methods**: `sortAi`, `filterAi`, `mapAi`, and `reduceAi`.
+- **Natural-language array methods**: `sortAi`, `filterAi`, `findAi`, `mapAi`, and `reduceAi`.
 - **Zero runtime AI cost**: the output is plain JavaScript; no AI code ships to the browser.
 - **Build-time generation** during both `vite` (dev server) and `vite build`.
 - **Persistent cache** of generated functions, so repeat builds make no API calls.
@@ -132,6 +132,7 @@ Every instruction **must be a string literal**. Methods chain with each other an
 |---|---|---|
 | `sortAi(instruction)` | `toSorted` | Comparator `(a, b)` |
 | `filterAi(instruction)` | `filter` | Predicate `(item)` |
+| `findAi(instruction)` | `find` | Predicate `(item)` |
 | `mapAi(instruction)` | `map` | Mapper `(item)` |
 | `reduceAi(instruction, initialValue)` | `reduce` | Reducer `(acc, item)` |
 
@@ -139,6 +140,8 @@ Every instruction **must be a string literal**. Methods chain with each other an
 const cheapestFirst = products.sortAi('Sort by price, lowest first.');
 
 const available = products.filterAi('Keep only items that are in stock.');
+
+const firstAvailable = products.findAi('Find the first item that is in stock.');
 
 const discounted = products.mapAi(
   'Reduce price by 10%, rounded to two decimals, and keep every other field.'
@@ -180,6 +183,7 @@ The package augments the global `Array<T>` interface with these methods (declare
 interface Array<T> {
   sortAi(instruction: string): T[];
   filterAi(instruction: string): T[];
+  findAi(instruction: string): T | undefined;
   mapAi<U = T>(instruction: string): U[];
   reduceAi<U>(instruction: string, initialValue: U): U;
 }
@@ -209,6 +213,7 @@ Generated code must be an **expression-bodied arrow function** with the expected
 |---|---|
 | `sortAi` | `localeCompare` |
 | `filterAi` | `localeCompare`, `includes` |
+| `findAi` | `localeCompare`, `includes` |
 | `mapAi` | `localeCompare`, `includes`, `Math.round`, `Math.floor`, `Math.ceil` |
 | `reduceAi` | `localeCompare`, `includes`, `Math.round`, `Math.floor`, `Math.ceil` |
 

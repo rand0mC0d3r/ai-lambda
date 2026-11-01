@@ -19,10 +19,20 @@ export const GENERATED_FUNCTION_VARIABLE = '__generated';
 const NO_EXTERNAL_RULE = 'No external dependencies.';
 const NO_MUTATIONS_RULE = 'No mutations.';
 const NO_ADDITIONAL_STATEMENTS_RULE = 'No additional variables or statements.';
+const FULL_ARROW_RULE = 'Return the complete arrow function, including its parameter list and "=>", not just the body expression.';
+const EXPRESSION_BODY_RULE = 'Use an expression body; do not use a block body or a return statement.';
+const NO_CASE_CONVERSION_RULE = 'Do not call toLowerCase or toUpperCase; only includes and localeCompare are allowed.';
 const ROUNDING_RULE = 'Use arithmetic for numeric changes and Math.round, Math.floor or Math.ceil for rounding.';
 const STRING_CHECK_RULE = 'Use includes or localeCompare for string checks.';
 const SCHEMA_FIELDS_RULE = 'Only access fields defined in the supplied schema.';
-const COMMON_RULES = [NO_EXTERNAL_RULE, NO_MUTATIONS_RULE, NO_ADDITIONAL_STATEMENTS_RULE];
+const COMMON_RULES = [
+  FULL_ARROW_RULE,
+  NO_EXTERNAL_RULE,
+  NO_MUTATIONS_RULE,
+  NO_ADDITIONAL_STATEMENTS_RULE,
+  EXPRESSION_BODY_RULE,
+  NO_CASE_CONVERSION_RULE
+];
 const MATH_STRING_METHODS = ['localeCompare', 'includes', 'round', 'floor', 'ceil'];
 
 export const aiFunctionSpecs: Record<string, AIFunctionSpec> = {
@@ -59,6 +69,25 @@ export const aiFunctionSpecs: Record<string, AIFunctionSpec> = {
     rules: [
       'Return true when the item should be kept.',
       'Return false when the item should be removed.',
+      SCHEMA_FIELDS_RULE,
+      'Use comparison operators for numeric, boolean and date comparisons.',
+      'Use includes or localeCompare with sensitivity:"base" for case-insensitive string matching.',
+      ...COMMON_RULES
+    ]
+  },
+  findAi: {
+    kind: 'find',
+    method: 'findAi',
+    replacementMethod: 'find',
+    outputField: 'predicate',
+    schemaName: 'find_predicate',
+    role: 'predicate',
+    signature: '(item) => ...',
+    parameters: ['item'],
+    allowedMethods: ['localeCompare', 'includes'],
+    rules: [
+      'Return true when the item is the one to find.',
+      'Return false when the item should be skipped.',
       SCHEMA_FIELDS_RULE,
       'Use comparison operators for numeric, boolean and date comparisons.',
       'Use includes or localeCompare with sensitivity:"base" for case-insensitive string matching.',

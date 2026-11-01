@@ -45,6 +45,29 @@ declare global {
     filterAi(instruction: string): T[];
 
     /**
+     * Returns the first element that satisfies a natural-language instruction,
+     * or `undefined` when no element matches. The instruction must be a string
+     * literal so the Vite `aiCompiler` plugin can generate and validate a
+     * predicate during the build.
+     *
+     * @param instruction Describes the element to find.
+     * @returns The first matching element, or `undefined`.
+     *
+     * @example Simple: find the first in-stock product
+     * ```ts
+     * const firstAvailable = products.findAi('Find the first product that is in stock.');
+     * ```
+     *
+     * @example Complex: find after filtering
+     * ```ts
+     * const cheapestPro = products
+     *   .filterAi('Keep in-stock products.')
+     *   .findAi('Find the product whose name contains "pro", ignoring case, and whose price is under 100.');
+     * ```
+     */
+    findAi(instruction: string): T | undefined;
+
+    /**
      * Transforms each element according to a natural-language instruction.
      * Specify `U` when the mapped elements have a different TypeScript type;
      * this type argument describes the result to TypeScript but does not

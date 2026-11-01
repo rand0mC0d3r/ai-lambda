@@ -19,8 +19,8 @@ import type { AIConfig } from './types.js';
 const shouldTransform = createFilter(/\.[jt]sx?$/, [/node_modules/, /\0/]);
 
 /**
- * Creates a Vite plugin that compiles `sortAi`, `filterAi`, `mapAi`, and
- * `reduceAi` array calls into native array operations during the build.
+ * Creates a Vite plugin that compiles `sortAi`, `filterAi`, `findAi`, `mapAi`,
+ * and `reduceAi` array calls into native array operations during the build.
  *
  * The plugin reads `tsconfig.json` and `.ai-rc.json` from Vite's resolved root.
  * The config file must contain an OpenAI `apiKey`; `model`, `cache`, and
@@ -61,6 +61,7 @@ const shouldTransform = createFilter(/\.[jt]sx?$/, [/node_modules/, /\0/]);
  *
  * interface Array<T> {
  *   filterAi(instruction: string): T[];
+ *   findAi(instruction: string): T | undefined;
  *   sortAi(instruction: string): T[];
  *   reduceAi<U>(instruction: string, initialValue: U): U;
  * }

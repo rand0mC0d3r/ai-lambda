@@ -20,6 +20,11 @@ const date = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium'
 });
 
+const toItems = (result: CartItem | CartItem[] | undefined): CartItem[] => {
+  if (result === undefined) return [];
+  return Array.isArray(result) ? result : [result];
+};
+
 const renderCart = (items: readonly CartItem[]) => {
   tableBody.replaceChildren();
 
@@ -78,7 +83,7 @@ for (const { label, run } of pipelines) {
     }
 
     button.setAttribute('aria-pressed', 'true');
-    renderCart(run());
+    renderCart(toItems(run()));
   });
 
   pipelineButtons.append(button);

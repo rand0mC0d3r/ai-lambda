@@ -1,0 +1,3 @@
+{
+  "predicate": "item => item.quantity > 1"
+}
