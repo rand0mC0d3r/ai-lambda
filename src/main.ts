@@ -53,16 +53,7 @@ const cart: CartItem[] = [
 // Natural language becomes native JavaScript.
 const sortedCart = sortAi(
   cart,
-  'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.',
-  {
-    id: 'number',
-    product: 'string',
-    category: 'string',
-    quantity: 'number',
-    unitPrice: 'number',
-    addedAt: 'date',
-    inStock: 'boolean'
-  }
+  'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
 );
 
 console.table(sortedCart);
