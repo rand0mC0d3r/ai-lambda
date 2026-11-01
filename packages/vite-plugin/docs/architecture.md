@@ -35,7 +35,7 @@ The plugin uses four hooks. Blue nodes in the diagram are plugin hooks.
 
 | Hook | When it runs | What the plugin does |
 | --- | --- | --- |
-| `configResolved` | Once, after the Vite config is resolved | Parses the tsconfig through the TypeScript API, builds the program snapshot, then reads `.ai-rc.json` through `readAiConfig`. That step rejects non-object JSON, unknown keys, wrong value types, a missing or empty `apiKey`, and a `generatedDir` outside the Vite root. It then applies defaults (`gpt-4.1-mini`, `cache: true`, `.ai-cache`). |
+| `configResolved` | Once, after the Vite config is resolved | Parses the tsconfig through the TypeScript API, builds the program snapshot, then reads `.ai-rc.json` through `readAiConfig`. That step rejects non-object JSON, unknown keys, wrong value types, a missing or empty `apiKey` (unless `provider` is `openai-compatible`), an unknown `provider`, a missing `model` for non-OpenAI providers, a `baseUrl` that is missing for `openai-compatible` or set for another provider, and a `generatedDir` outside the Vite root. It then applies defaults (`provider: openai`, `gpt-4.1-mini` for OpenAI, `cache: true`, `.ai-cache`). |
 | `transform` | Once per module (build) or once per request (dev) | Rewrites `sortAi`, `filterAi`, `findAi`, `someAi`, `mapAi`, and `reduceAi` call sites in TypeScript source files. See section 2. |
 | `closeBundle` | Once, at the end of `vite build` (skipped in watch builds, which reuse the API across rebuilds) | Disposes the TypeScript snapshot and closes the TypeScript API. |
 | `closeWatcher` | When the dev server closes | Same cleanup as `closeBundle`. |
@@ -59,7 +59,7 @@ flowchart TD
     AA --> AB[generateAiFunction]
     AB --> AC{Cache enabled and<br/>cache file exists?}
     AC -->|hit| AD[Read cached function<br/>and validate it]
-    AC -->|miss| AE[Call OpenAI API<br/>and validate the result<br/>including result shape]
+    AC -->|miss| AE[Call the configured provider<br/>and validate the result<br/>including result shape]
     AE --> AF[Write cache file]
     AD --> AG[Replace the method tail<br/>with generated body<br/>via MagicString]
     AF --> AG
@@ -92,21 +92,21 @@ sequenceDiagram
     participant TS as TypeScript snapshot
     participant Gen as generateAiFunction
     participant Cache as .ai-cache
-    participant OpenAI as OpenAI API
+    participant Provider as LLM provider API
 
     Dev->>Vite: imports module containing sortAi(items)
     Vite->>Plugin: transform(code, id)
     Plugin->>TS: update snapshot, check text matches
     Plugin->>Plugin: find AI call, derive instruction + schema
     Plugin->>Gen: generate(spec, instruction, schema, model)
-    Gen->>Gen: key = sha256(instruction, schema, model, compilerVersion,<br/>kind, parameterSchemas when present)
+    Gen->>Gen: key = sha256(instruction, schema, model, compilerVersion,<br/>kind, parameterSchemas when present, and provider/baseUrl when not openai)
     Gen->>Cache: read <key>.json
     alt cache hit
         Cache-->>Gen: function source
         Gen->>Gen: validate against schema
     else cache miss
-        Gen->>OpenAI: chat request with instruction + schema
-        OpenAI-->>Gen: generated function source
+        Gen->>Provider: chat request with instruction + schema
+        Provider-->>Gen: generated function source
         Gen->>Gen: validate against schema
         Gen->>Cache: write <key>.json
     end
@@ -139,7 +139,7 @@ Practical consequences:
 | --- | --- | --- |
 | When `transform` runs | Lazily, when the browser requests the module | For every module reachable from the entry point |
 | Work done per module | Only for modules that are requested | For every reachable module |
-| Cache effect | Repeat requests reuse the cache | The cache avoids repeated OpenAI calls across builds |
+| Cache effect | Repeat requests reuse the cache | The cache avoids repeated provider calls across builds |
 | Watch behavior | Changing a source file re-runs `transform` for that file | Not applicable |
 
 ## 6. Files involved
@@ -149,7 +149,8 @@ Practical consequences:
 | [src/aiCompiler.ts](../src/aiCompiler.ts) | Plugin entry. Declares hooks and `enforce: 'pre'`. |
 | [src/config.ts](../src/config.ts) | Reads and validates `.ai-rc.json`, then applies defaults. |
 | [src/transform/transformModule.ts](../src/transform/transformModule.ts) | Per-module filter, source-match check, AST walk, and MagicString rewrite. |
-| [src/openai/generateAiFunction.ts](../src/openai/generateAiFunction.ts) | Cache key, cache read and write, and OpenAI call. |
+| [src/openai/generateAiFunction.ts](../src/openai/generateAiFunction.ts) | Cache key, cache read and write, and the provider call. |
+| [src/providers/index.ts](../src/providers/index.ts) | Selects the provider (`openai`, `anthropic`, `gemini`, `openai-compatible`) and shares the HTTP retry logic. |
 | [src/functions/inferSchema.ts](../src/functions/inferSchema.ts) | Infers the item schema and the result shape from TypeScript types. |
 | [src/functions/validateAiFunction.ts](../src/functions/validateAiFunction.ts) | Validates generated functions: syntax, allowed methods, and result shape. |
 | [src/translations/en.ts](../src/translations/en.ts) | User-facing error messages. |
@@ -166,7 +167,7 @@ flowchart TD
     C --> D{Cache enabled and<br/>cache file exists?}
     D -->|hit| H
     D -->|miss| E[Prompt construction<br/>instruction, schema, parameters, rules]
-    E --> F[LLM generation<br/>OpenAI Responses API, JSON schema output]
+    E --> F[LLM generation<br/>OpenAI, Anthropic, Gemini, or OpenAI-compatible<br/>JSON schema output]
     F --> G[Generated expression<br/>arrow function source]
     G --> H[AST validation<br/>syntax, arrow shape, allowed nodes and methods]
     H --> I[Semantic and type validation<br/>schema-aware field and type checks, result shape]
@@ -195,7 +196,7 @@ Green nodes are bundler-independent. The diagram has no Vite-specific nodes.
 | TypeScript schema inference | [src/functions/inferSchema.ts](../src/functions/inferSchema.ts) | Uses the TypeScript checker to derive item fields, accumulator schema, and result shape. |
 | Cache lookup | [src/openai/generateAiFunction.ts](../src/openai/generateAiFunction.ts) | Key is a hash of instruction, schema, model, compiler version, and kind. A hit skips prompt, LLM, and cache write. |
 | Prompt construction | [src/openai/generateAiFunction.ts](../src/openai/generateAiFunction.ts) | Sends instruction, schema, parameter schemas, and the spec's rules. Array data is not sent. |
-| LLM generation | [src/openai/generateAiFunction.ts](../src/openai/generateAiFunction.ts), [src/openai/extractGeneratedText.ts](../src/openai/extractGeneratedText.ts) | Requests strict JSON output with one function field. |
+| LLM generation | [src/providers/](../src/providers/) (per-provider files), [src/openai/generateAiFunction.ts](../src/openai/generateAiFunction.ts), [src/openai/extractGeneratedText.ts](../src/openai/extractGeneratedText.ts) | Requests strict JSON output with one function field. Each provider maps the request to its own API format. |
 | Generated expression | Output field of the response | Parsed as a single arrow function. |
 | AST validation | [src/functions/validateAiFunction.ts](../src/functions/validateAiFunction.ts) | Parses the expression with the TypeScript API. Checks syntax, parameters, and an allowlist of node kinds, operators, and methods. |
 | Semantic and type validation | [src/functions/validateAiFunction.ts](../src/functions/validateAiFunction.ts) | Uses the inferred schema to check field access, numeric operators, and result fields. It does not run TypeScript's semantic diagnostics on the generated code. |

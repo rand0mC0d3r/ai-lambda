@@ -8,7 +8,7 @@
 
 Turn plain-English instructions into array operations at **Vite transform time**.
 
-Write `sortAi`, `filterAi`, `findAi`, `someAi`, `mapAi`, or `reduceAi`. The plugin asks OpenAI to generate a small JavaScript function during `vite` or `vite build`, validates it, and rewrites your call to a native array method. The browser never calls OpenAI.
+Write `sortAi`, `filterAi`, `findAi`, `someAi`, `mapAi`, or `reduceAi`. The plugin asks your configured AI provider (OpenAI, Anthropic, Gemini, or an OpenAI-compatible endpoint) to generate a small JavaScript function during `vite` or `vite build`, validates it, and rewrites your call to a native array method. The browser never calls the provider.
 
 ```ts
 const cheapestFirst = products.sortAi('Sort by price, lowest first.');
@@ -48,7 +48,7 @@ const cheapestFirst = products.toSorted((a, b) => a.price - b.price);
 - **Zero runtime AI cost**: the output is plain JavaScript; no AI code ships to the browser.
 - **Build-time generation** during both `vite` (dev server) and `vite build`.
 - **Persistent cache** of generated functions, so repeat builds make no API calls.
-- **Resilient OpenAI calls**: 60-second timeout, and automatic retries with backoff for network errors, 408, 429, and 5xx responses (honoring `Retry-After`).
+- **Resilient provider calls**: 60-second timeout, and automatic retries with backoff for network errors, 408, 429, and 5xx responses (honoring `Retry-After`).
 - **Type-aware**: field schemas are inferred from your `tsconfig.json` through TypeScript's compiler API.
 - **Validated output**: generated code must pass a restricted grammar before it is used.
 - **Chainable**: combine AI methods with each other and with native array methods.
@@ -61,7 +61,9 @@ const cheapestFirst = products.toSorted((a, b) => a.price - b.price);
 |---|---|
 | Vite | `>=6.0.0` (peer dependency) |
 | TypeScript | `>=7.0.2 <8.0.0` (peer dependency, installed in your project) |
-| OpenAI | API key and network access when a function must be generated |
+| Provider | Network access when a function must be generated |
+|---|---|
+| OpenAI, Anthropic, Gemini, or an OpenAI-compatible endpoint | API key (optional for a keyless `openai-compatible` server) and network access (see [Providers](#providers)) |
 | Runtime | Browsers or Node.js with `Array.prototype.toSorted` (or a polyfill) for `sortAi` |
 
 The plugin uses TypeScript's **unstable** synchronous compiler API (`typescript/unstable/sync`), which is why TypeScript is pinned to the 7.x range.
@@ -96,6 +98,8 @@ export default defineConfig({
 }
 ```
 
+To use another provider, set `provider` and `model` (see [Providers](#providers)).
+
 **3. Keep secrets and the cache out of version control:**
 
 ```gitignore
@@ -115,14 +119,30 @@ Create `.ai-rc.json` in the resolved Vite root (the `root` option, or the direct
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `apiKey` | `string` | none (**required**) | OpenAI API key. Checked at startup, even when every function is cached. |
-| `model` | `string` | `"gpt-4.1-mini"` | Model used for generation. It must support structured JSON output. |
+| `provider` | `string` | `"openai"` | One of `"openai"`, `"anthropic"`, `"gemini"`, or `"openai-compatible"`. |
+| `apiKey` | `string` | none (**required** except for `openai-compatible`) | API key for the selected provider. Checked at startup, even when every function is cached. Optional for `openai-compatible`, where no `Authorization` header is sent when it is omitted. |
+| `model` | `string` | `"gpt-4.1-mini"` for `openai`; **required** for other providers | Model used for generation. It must support structured JSON output. |
+| `baseUrl` | `string` | none | Required for `openai-compatible` and rejected for other providers. The base URL of the endpoint, for example `http://localhost:11434/v1`. |
 | `cache` | `boolean` | `true` | When `true`, generated functions are read from and written to `generatedDir`. `false` skips both. |
 | `generatedDir` | `string` | `".ai-cache"` | Cache directory, relative to the Vite root. |
 
-Only `apiKey` is required. The key is read only from `.ai-rc.json`; there is no environment-variable fallback.
+Only `apiKey` is required for `openai`, `anthropic`, and `gemini`. The key is read only from `.ai-rc.json`; there is no environment-variable fallback.
 
-The file is validated at startup. The plugin fails the build if the file is not a JSON object, contains keys other than the four above (so typos are caught), or has a value of the wrong type. `generatedDir` must be a relative path that stays inside the Vite root.
+The file is validated at startup. The plugin fails the build if the file is not a JSON object, contains keys other than the ones above (so typos are caught), or has a value of the wrong type. `generatedDir` must be a relative path that stays inside the Vite root.
+
+### Providers
+
+| `provider` | Service | Example `.ai-rc.json` |
+|---|---|---|
+| `openai` (default) | OpenAI Responses API | `{ "apiKey": "...", "model": "gpt-4.1-mini" }` |
+| `anthropic` | Anthropic Messages API | `{ "provider": "anthropic", "apiKey": "...", "model": "claude-sonnet-4-5" }` |
+| `gemini` | Google Gemini `generateContent` API | `{ "provider": "gemini", "apiKey": "...", "model": "gemini-2.5-flash" }` |
+| `openai-compatible` | Any server that implements `POST {baseUrl}/chat/completions` with JSON schema output | `{ "provider": "openai-compatible", "apiKey": "...", "model": "llama3.1", "baseUrl": "http://localhost:11434/v1" }` |
+
+Each provider uses the same prompt and validation. Only `openai-compatible` may omit `apiKey`, for local servers that need no key (for example, Ollama with `"baseUrl": "http://localhost:11434/v1"`). Cost estimates in the build report are only shown for `openai`, where built-in prices exist. Cache files for `openai` are unchanged; other providers add their provider and base URL to the cache key, so switching providers regenerates functions.
+
+The Anthropic, Gemini, and OpenAI-compatible integrations are tested against mocked HTTP responses. Check the first build's output against your provider's dashboard, because server behaviour varies between vendors.
+
 
 ## Usage
 
@@ -196,7 +216,7 @@ interface Array<T> {
 | Export | Kind | Description |
 |---|---|---|
 | `aiCompiler()` | function | Returns the Vite plugin. Call it with no arguments; configuration comes from `.ai-rc.json` and `tsconfig.json`. |
-| `AIConfig` | type | Shape of `.ai-rc.json`: `apiKey`, `model`, `cache`, `generatedDir`. |
+| `AIConfig` | type | Shape of `.ai-rc.json`: `apiKey`, `provider`, `model`, `baseUrl`, `cache`, `generatedDir`. |
 
 ## Supported types and helpers
 
@@ -232,17 +252,17 @@ flowchart TD
     D --> E["TypeScript checker infers receiver and accumulator schemas"]
     E --> F{"Generated function in cache?"}
     F -- Yes --> H["Validate function"]
-    F -- No --> G["Send instruction and schema to OpenAI"]
+    F -- No --> G["Send instruction and schema to the provider"]
     G --> H
     H --> I["Cache function when enabled"]
     I --> J["Rewrite to toSorted, filter, map, or reduce"]
     J --> K["Application runs native JavaScript"]
 ```
 
-1. On startup, the plugin loads `tsconfig.json` and `.ai-rc.json` and verifies the API key.
+1. On startup, the plugin loads `tsconfig.json` and `.ai-rc.json` and verifies the API key when the provider requires one.
 2. For each `.js`, `.jsx`, `.ts`, or `.tsx` module (excluding `node_modules`), it finds supported AI calls.
 3. The TypeScript checker infers the element schema of the receiver array (and the accumulator type for `reduceAi`).
-4. On a cache miss, the instruction, the inferred schema, and the method's rules are sent to OpenAI's Responses API (`https://api.openai.com/v1/responses`). **Array contents are never sent.**
+4. On a cache miss, the instruction, the inferred schema, and the method's rules are sent to the configured provider's API (OpenAI Responses, Anthropic Messages, Gemini `generateContent`, or `{baseUrl}/chat/completions`). **Array contents are never sent.**
 5. The generated function is validated, cached (if enabled), and the call is rewritten.
 6. Each generation is logged through Vite's logger: the instruction when it starts, and the generated function when it finishes. Identical concurrent generations share one OpenAI request.
 
@@ -262,7 +282,7 @@ Generated functions are stored as JSON files in `generatedDir`, named by a hash 
 
 Changing any of these triggers regeneration. Cached files contain the generated JavaScript, so you can review them directly.
 
-**Ignore the cache** (default, recommended for most projects) or **commit it** if you want CI builds to run without OpenAI access or cost. Committing it means reviewing new cache files in pull requests like any other code.
+**Ignore the cache** (default, recommended for most projects) or **commit it** if you want CI builds to run without provider access or cost. Committing it means reviewing new cache files in pull requests like any other code.
 
 To force regeneration, delete the relevant file in `.ai-cache/` or the whole directory.
 
@@ -282,7 +302,7 @@ Costs are estimates from a built-in table of standard-tier list prices per 1M to
 - **Your data** stays local: only the instruction and the type schema leave your machine, and only on a cache miss.
 - **Generated code is validated, not sandboxed.** The validator rejects computed or optional access, accessor definitions, prototype-related properties, shorthand or computed object keys, loose equality, coercive arithmetic, `this`/`super`, unknown identifiers, undeclared fields, and calls outside each method's helper list. Object spread is limited to object parameters and array spread to array parameters.
 - **Validation is not a JavaScript sandbox.** Reading or spreading application data can still invoke getters or proxy traps on those objects. Review generated behavior and runtime data as you would any application code.
-- **No telemetry.** The only network call is the OpenAI request on a cache miss.
+- **No telemetry.** The only network call is the provider request on a cache miss.
 
 ## Known limitations
 
@@ -300,15 +320,15 @@ Configuration and transform errors are prefixed with `[ai-compile-time]`.
 
 | Symptom | Check |
 |---|---|
-| Missing config or API key | Put `.ai-rc.json` at the resolved Vite root and set `apiKey`. The key is required even for cache hits. |
+| Missing config or API key | Put `.ai-rc.json` at the resolved Vite root and set `apiKey`. The key is checked even for cache hits. It is optional only for `openai-compatible`. |
 | TypeScript config error | Ensure a valid `tsconfig.json` is at the same root. |
 | `items must be an array` | Check that the expression before the AI method has an array type in the project's TypeScript program. |
 | `Unable to type-check AI call` / `source does not match the TypeScript project` | Make sure the file is included in `tsconfig.json`, and that no other plugin rewrites the source before this one runs. |
 | Unsupported field type | Use `string`, `number`, `boolean`, or `Date` fields; avoid mixed unions and nested objects. |
 | Invalid invocation | Pass a literal string; `reduceAi` also needs an initial value. Type arguments are supported only on `mapAi` and `reduceAi`. |
 | `Invalid cached ...` warning | The plugin regenerates the entry automatically. If it keeps happening, delete the file in `generatedDir`. |
-| `OpenAI error 401` / `429` / `5xx` | Verify the key and model access (401). For 429 and 5xx, the plugin already retried; check quota and rate limits, or retry the build later. |
-| `OpenAI request failed after N attempt(s)` | Check connectivity and proxy settings. The plugin already retried, and each request times out after 60 seconds. |
+| `<Provider> error 401` / `429` / `5xx` | Verify the key, model name, and model access (401). For 429 and 5xx, the plugin already retried; check quota and rate limits, or retry the build later. |
+| `<Provider> request failed after N attempt(s)` | Check connectivity, proxy settings, and `baseUrl` for `openai-compatible`. The plugin already retried, and each request times out after 60 seconds. |
 | Generation refused or validation error | Simplify the instruction to supported fields and helpers, then retry. |
 | `sortAi` missing at runtime | Confirm the plugin is registered and the call is in a transformed JS/TS module. Check `toSorted` support too. |
 
@@ -316,7 +336,7 @@ Errors include the failing call site, instruction, model, underlying cause, and 
 
 ## FAQ
 
-**Does my array data go to OpenAI?**
+**Does my array data go to the provider?**
 No. Only the instruction and the inferred field schema are sent, and only when a function is not cached.
 
 **Is the same instruction always compiled the same way?**
@@ -336,17 +356,17 @@ Yes. The generic is optional. Use it when you need a specific result type for `m
 
 ## Metrics
 
-Measured on version `0.2.2` (2026-11-01).
+Measured on version `0.4.2` (2026-11-01).
 
 | Metric | Value |
 |---|---|
-| Version | `0.2.2` |
+| Version | `0.4.2` |
 | Runtime dependencies | 1 (`magic-string` 1.4.5) |
 | Peer dependencies | `vite >=6.0.0`, `typescript >=7.0.2 <8.0.0` |
-| Source files | 14 TypeScript files, 1,716 lines |
-| Test files | 6 test files, 50 tests, 870 lines of test code |
-| Test run time | ~1.6 s |
-| Published package | 34 files, 19.2 kB packed, 88.7 kB unpacked |
+| Source files | 25 TypeScript files, 4,102 lines |
+| Test files | 11 test files, 139 tests, 2,212 lines of test code |
+| Test run time | ~2.4 s |
+| Published package | 52 files, 49.6 kB packed, 188.1 kB unpacked |
 | License | ISC |
 
 ## Test coverage
@@ -357,32 +377,33 @@ Coverage is measured with [Vitest](https://vitest.dev) and V8 (`npm run test:cov
 
 | Metric | Coverage | Covered / total |
 |---|---|---|
-| Statements | **91.56%** | 293 / 320 |
-| Branches | **84.61%** | 297 / 351 |
-| Functions | **100%** | 40 / 40 |
-| Lines | **92.25%** | 286 / 310 |
+| Statements | **91.48%** | 462 / 505 |
+| Branches | **85.88%** | 438 / 510 |
+| Functions | **97.22%** | 70 / 72 |
+| Lines | **93.30%** | 432 / 463 |
 
 **Per file:**
 
 | File | Statements | Branches | Functions | Lines |
 |---|---|---|---|---|
-| `aiCompiler.ts` | 97.29% | 87.50% | 100% | 97.29% |
-| `functions/inferSchema.ts` | 89.28% | 80.00% | 100% | 88.46% |
-| `functions/validateAiFunction.ts` | 85.45% | 81.05% | 100% | 86.11% |
+| `aiCompiler.ts` | 94.64% | 87.50% | 90.90% | 94.23% |
+| `functions/inferSchema.ts` | 85.60% | 82.97% | 94.11% | 91.89% |
+| `functions/validateAiFunction.ts` | 89.03% | 82.64% | 100% | 89.33% |
 | `openai/extractGeneratedText.ts` | 95.83% | 91.66% | 100% | 100% |
-| `openai/generateAiFunction.ts` | 97.05% | 84.61% | 100% | 97.05% |
-| `transform/transformModule.ts` | 96.49% | 95.91% | 100% | 98.18% |
+| `openai/generateAiFunction.ts` | 95.94% | 87.50% | 100% | 95.71% |
+| `transform/transformModule.ts` | 100% | 100% | 100% | 100% |
+| `utils.ts` | 100% | 100% | 100% | 100% |
 
 **Across all of `src/`** (includes modules outside the configured scope):
 
 | Metric | Coverage | Covered / total |
 |---|---|---|
-| Statements | 90.78% | 335 / 369 |
-| Branches | 83.45% | 333 / 399 |
-| Functions | 100% | 46 / 46 |
-| Lines | 91.36% | 328 / 359 |
+| Statements | 91.77% | 748 / 815 |
+| Branches | 84.56% | 663 / 784 |
+| Functions | 97.76% | 131 / 134 |
+| Lines | 93.34% | 701 / 751 |
 
-Not included in the configured thresholds: `errorContext.ts` (75.86% statements, 75.55% branches). Adding it to `vitest.config.ts` is a good next step.
+Modules outside the configured thresholds are not held to the 80% floor. Of these, `errorContext.ts` is the least covered (54.83% statements, 33.33% branches). The new `providers/` modules are 91-100% on statements, with `openaiCompatible.ts` at 78.94% branches and `gemini.ts` at 83.33%. Adding these to `vitest.config.ts` is a good next step.
 
 ## Development
 
@@ -418,7 +439,8 @@ src/
   errorContext.ts         Error decoration with cause and insight
   utils.ts                Record guard and SHA-256 hashing for cache keys
   functions/              Schema inference and generated-function validation
-  openai/                 OpenAI request and response parsing
+  providers/              Provider abstraction: OpenAI, Anthropic, Gemini, OpenAI-compatible
+  openai/                 OpenAI-specific response parsing and usage/cost accounting
   transform/              Module scanning and call rewriting
   translations/en.ts      User-facing messages
 test/                     Vitest suites mirroring src/

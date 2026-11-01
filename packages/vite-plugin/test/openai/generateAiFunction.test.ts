@@ -15,6 +15,7 @@ vi.mock('../../src/functions/validateAiFunction.js', () => ({
 }));
 
 const config: AIConfig = {
+  provider: 'openai',
   apiKey: 'test-key',
   model: 'test-model',
   cache: true,
@@ -293,7 +294,7 @@ describe('generateAiFunction', () => {
     );
 
     await expect(promise).rejects.toMatchObject({
-      code: 'openai_network',
+      code: 'provider_network',
       message: 'OpenAI request failed after 3 attempt(s): fetch failed'
     });
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -315,7 +316,7 @@ describe('generateAiFunction', () => {
         undefined,
         logger
       )
-    ).rejects.toMatchObject({ code: 'openai_http', status: 401 });
+    ).rejects.toMatchObject({ code: 'provider_http', status: 401 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

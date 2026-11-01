@@ -1,7 +1,18 @@
 import { SyntaxKind } from 'typescript/unstable/ast';
 import type { AIFunctionSpec } from './aiFunctions.js';
 
-/** Model used when `.ai-rc.json` does not set `model`. */
+/** Provider used when `.ai-rc.json` does not set `provider`. */
+export const DEFAULT_PROVIDER = 'openai';
+/** Providers accepted in the `provider` key of `.ai-rc.json`. */
+export const PROVIDER_IDS = ['openai', 'anthropic', 'gemini', 'openai-compatible'] as const;
+/** Display names of providers, used in logs and error messages. */
+export const PROVIDER_LABELS: Record<(typeof PROVIDER_IDS)[number], string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  gemini: 'Gemini',
+  'openai-compatible': 'OpenAI-compatible'
+};
+/** Model used with the OpenAI provider when `.ai-rc.json` does not set `model`. Other providers require `model`. */
 export const DEFAULT_MODEL = 'gpt-4.1-mini';
 /** Cache directory used when `.ai-rc.json` does not set `generatedDir`, relative to the Vite root. */
 export const DEFAULT_GENERATED_DIR = '.ai-cache';
@@ -13,14 +24,22 @@ export const AI_CONFIG_FILE = '.ai-rc.json';
 export const VITE_PLUGIN_NAME = 'ai-compile-time';
 /** OpenAI Responses API endpoint. */
 export const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
-/** Timeout for each OpenAI request, in milliseconds. */
-export const OPENAI_TIMEOUT_MS = 60_000;
-/** Number of retries after the first OpenAI attempt fails. */
-export const OPENAI_MAX_RETRIES = 2;
-/** Base delay for exponential backoff between OpenAI retries, in milliseconds. */
-export const OPENAI_RETRY_BASE_DELAY_MS = 250;
+/** Anthropic Messages API endpoint. */
+export const ANTHROPIC_MESSAGES_URL = 'https://api.anthropic.com/v1/messages';
+/** Value of the `anthropic-version` header. */
+export const ANTHROPIC_VERSION = '2023-06-01';
+/** Output token limit for Anthropic requests. The API requires one; generated functions are small. */
+export const ANTHROPIC_MAX_TOKENS = 4096;
+/** Gemini API base URL. The model name and `:generateContent` are appended. */
+export const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+/** Timeout for each provider request, in milliseconds. */
+export const PROVIDER_TIMEOUT_MS = 60_000;
+/** Number of retries after the first provider attempt fails. */
+export const PROVIDER_MAX_RETRIES = 2;
+/** Base delay for exponential backoff between provider retries, in milliseconds. */
+export const PROVIDER_RETRY_BASE_DELAY_MS = 250;
 /** Upper bound on a server-requested `Retry-After` delay, in milliseconds. */
-export const OPENAI_MAX_RETRY_AFTER_MS = 10_000;
+export const PROVIDER_MAX_RETRY_AFTER_MS = 10_000;
 /** Version of the generation format. Bump it to invalidate cached functions. */
 export const COMPILER_VERSION = 1;
 /** Prefix for the temporary directories used during validation. */

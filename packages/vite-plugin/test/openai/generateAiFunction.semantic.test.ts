@@ -12,6 +12,7 @@ import { generateAiFunction } from '../../src/openai/generateAiFunction.js';
 import { resetAiCallReport } from '../../src/reporting/aiCallReport.js';
 
 const config: AIConfig = {
+  provider: 'openai',
   apiKey: 'test-key',
   model: 'test-model',
   cache: true,

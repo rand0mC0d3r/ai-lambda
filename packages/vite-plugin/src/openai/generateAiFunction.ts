@@ -10,18 +10,15 @@ import type {
 } from '../aiFunctions.js';
 import {
   COMPILER_VERSION,
-  OPENAI_MAX_RETRIES,
-  OPENAI_MAX_RETRY_AFTER_MS,
-  OPENAI_RESPONSES_URL,
-  OPENAI_RETRY_BASE_DELAY_MS,
-  OPENAI_TIMEOUT_MS
+  PROVIDER_LABELS
 } from '../constants.js';
 import { AIPluginError } from '../errors.js';
 import { validateAiFunction } from '../functions/validateAiFunction.js';
 import type { AIConfig } from '../types.js';
 import { hash, isRecord } from '../utils.js';
-import { extractGeneratedText } from './extractGeneratedText.js';
-import { estimateCostUsd, readUsage, type TokenUsage } from './usage.js';
+import { describeError } from '../providers/common.js';
+import { createProvider, type GenerationRequest } from '../providers/index.js';
+import { estimateCostUsd, type TokenUsage } from './usage.js';
 import {
   finishAiCall,
   formatCallLine,
@@ -44,9 +41,6 @@ interface CallTrace {
   /** Token usage reported by OpenAI, when available. */
   usage?: TokenUsage;
 }
-
-/** HTTP status codes that trigger a retry. */
-const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 
 /**
  * Reads a cache file as UTF-8 text.
@@ -100,107 +94,6 @@ function parseCachedJson(
   }
 }
 
-/**
- * Resolves after the given delay.
- *
- * @param ms Delay in milliseconds.
- */
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Computes how long to wait before retrying. Uses the `Retry-After` header when it is a
- * valid number of seconds, capped at {@link OPENAI_MAX_RETRY_AFTER_MS}. Otherwise falls back
- * to exponential backoff.
- *
- * @param response The failed response.
- * @param attempt Zero-based index of the attempt that failed.
- * @returns The delay in milliseconds.
- */
-function getRetryDelayMs(response: Response, attempt: number): number {
-  const retryAfter = response.headers.get('retry-after');
-  const seconds = retryAfter === null ? Number.NaN : Number(retryAfter);
-
-  if (Number.isFinite(seconds) && seconds >= 0) {
-    return Math.min(seconds * 1000, OPENAI_MAX_RETRY_AFTER_MS);
-  }
-
-  return OPENAI_RETRY_BASE_DELAY_MS * 2 ** attempt;
-}
-
-/**
- * Turns an unknown thrown value into a message string.
- *
- * @param error The thrown value.
- * @returns The error message, or `String(error)` for non-`Error` values.
- */
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * POSTs to OpenAI with a per-request timeout. Retries network errors and retryable HTTP
- * statuses (see {@link RETRYABLE_STATUSES}) up to {@link OPENAI_MAX_RETRIES} times.
- *
- * @param url The request URL.
- * @param init Fetch options, excluding the timeout signal.
- * @param logger Logger for retry warnings.
- * @returns The final response and the number of attempts made.
- * @throws {AIPluginError} With code `openai_network` when every attempt fails with a network error.
- */
-async function fetchWithRetry(
-  url: string,
-  init: RequestInit,
-  logger: Logger
-): Promise<{ response: Response; attempts: number }> {
-  const maxAttempts = OPENAI_MAX_RETRIES + 1;
-
-  for (let attempt = 0; ; attempt++) {
-    const isLastAttempt = attempt + 1 >= maxAttempts;
-    let response: Response;
-
-    try {
-      response = await fetch(url, {
-        ...init,
-        signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS)
-      });
-    } catch (error) {
-      if (isLastAttempt) {
-        throw new AIPluginError(
-          translate('openAiNetworkError', {
-            attempts: maxAttempts,
-            cause: describeError(error)
-          }),
-          'openai_network',
-          { cause: error }
-        );
-      }
-
-      const delay = OPENAI_RETRY_BASE_DELAY_MS * 2 ** attempt;
-      logger.warn(translate('openAiRetryNetwork', {
-        message: describeError(error),
-        delay
-      }));
-      await wait(delay);
-      continue;
-    }
-
-    if (
-      response.ok ||
-      isLastAttempt ||
-      !RETRYABLE_STATUSES.has(response.status)
-    ) {
-      return { response, attempts: attempt + 1 };
-    }
-
-    const delay = getRetryDelayMs(response, attempt);
-    logger.warn(translate('openAiRetryStatus', { status: response.status, delay }));
-    await response.body?.cancel().catch(() => undefined);
-    await wait(delay);
-  }
-}
-
 /** Requests that are in progress, keyed by cache file, so identical calls share one request. */
 const inFlight = new Map<string, Promise<string>>();
 
@@ -234,6 +127,10 @@ export function generateAiFunction(
     instruction,
     schema,
     model: config.model,
+    // Non-OpenAI keys add the provider so cache files for OpenAI stay valid.
+    ...(config.provider === 'openai'
+      ? {}
+      : { provider: config.provider, baseUrl: config.baseUrl }),
     compilerVersion: COMPILER_VERSION,
     ...(parameterSchemas ? { parameterSchemas } : {}),
     // Keyed only when present so cache files for scalar and array results stay valid.
@@ -271,6 +168,7 @@ export function generateAiFunction(
         completeCall(logger, {
           spec,
           instruction,
+          provider: config.provider,
           model: config.model,
           trace,
           startedAt,
@@ -282,6 +180,7 @@ export function generateAiFunction(
         completeCall(logger, {
           spec,
           instruction,
+          provider: config.provider,
           model: config.model,
           trace,
           startedAt,
@@ -310,6 +209,7 @@ function completeCall(
   call: {
     spec: AIFunctionSpec;
     instruction: string;
+    provider: AIConfig['provider'];
     model: string;
     trace: CallTrace;
     startedAt: number;
@@ -326,7 +226,10 @@ function completeCall(
     durationMs: performance.now() - call.startedAt,
     attempts: trace.attempts,
     usage: trace.usage,
-    costUsd: trace.usage ? estimateCostUsd(call.model, trace.usage) : undefined,
+    // Pricing is only known for OpenAI models.
+    costUsd: trace.usage && call.provider === 'openai'
+      ? estimateCostUsd(call.model, trace.usage)
+      : undefined,
     errorMessage: call.errorMessage
   };
 
@@ -442,17 +345,9 @@ async function compileAiFunction(
 
   logger.info(translate('aiCompiling', { method: spec.method, instruction }));
 
-  const { response, attempts } = await fetchWithRetry(
-    OPENAI_RESPONSES_URL,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: config.model,
-        instructions: `
+  const providerLabel = PROVIDER_LABELS[config.provider];
+  const request: GenerationRequest = {
+    instructions: `
 You are a JavaScript ${spec.role} compiler.
 
 Generate a single JavaScript arrow function:
@@ -462,60 +357,17 @@ Rules:
 ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
 - Output JavaScript code only inside the JSON field.
         `,
-        input: JSON.stringify({
-          instruction,
-          schema,
-          ...(parameterSchemas ? { parameterSchemas } : {}),
-          availableVariables: spec.parameters
-        }),
-        text: {
-          format: {
-            type: 'json_schema',
-            name: spec.schemaName,
-            strict: true,
-            schema: {
-              type: 'object',
-              properties: {
-                [spec.outputField]: {
-                  type: 'string'
-                }
-              },
-              required: [spec.outputField],
-              additionalProperties: false
-            }
-          }
-        }
-      })
-    },
-    logger
-  );
-  trace.attempts = attempts;
+    input: JSON.stringify({
+      instruction,
+      schema,
+      ...(parameterSchemas ? { parameterSchemas } : {}),
+      availableVariables: spec.parameters
+    }),
+    schemaName: spec.schemaName,
+    outputField: spec.outputField
+  };
 
-  if (!response.ok) {
-    throw new AIPluginError(
-      translate('openAiHttpError', {
-        status: response.status,
-        body: await response.text()
-      }),
-      'openai_http',
-      { status: response.status }
-    );
-  }
-
-  let body: unknown;
-
-  try {
-    body = await response.json();
-  } catch (error) {
-    throw new AIPluginError(
-      translate('invalidOpenAiResponse'),
-      'openai_response',
-      { cause: error }
-    );
-  }
-
-  trace.usage = readUsage(body);
-  const output = extractGeneratedText(body);
+  const output = await createProvider(config).generate(request, trace, logger);
   let parsed: unknown;
 
   try {
@@ -523,9 +375,10 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
   } catch (error) {
     throw new AIPluginError(
       translate('invalidGeneratedJson', {
+        provider: providerLabel,
         role: spec.role
       }),
-      'openai_response',
+      'provider_response',
       { cause: error }
     );
   }
@@ -534,8 +387,11 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
 
   if (generated === undefined) {
     throw new AIPluginError(
-      translate('missingGeneratedFunction', { role: spec.role }),
-      'openai_response'
+      translate('missingGeneratedFunction', {
+        provider: providerLabel,
+        role: spec.role
+      }),
+      'provider_response'
     );
   }
 

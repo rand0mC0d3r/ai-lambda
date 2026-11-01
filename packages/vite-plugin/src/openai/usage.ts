@@ -1,4 +1,4 @@
-import { isRecord } from '../utils.js';
+import { isRecord, toCount } from '../utils.js';
 
 /**
  * Token counts reported by one OpenAI response.
@@ -37,16 +37,6 @@ const MODEL_PRICING: Record<string, ModelPricing> = {
   'gpt-5.4-mini': { inputPerMillion: 0.75, cachedInputPerMillion: 0.075, outputPerMillion: 4.5 },
   'gpt-5.4-nano': { inputPerMillion: 0.2, cachedInputPerMillion: 0.02, outputPerMillion: 1.25 }
 };
-
-/**
- * Converts an unknown value to a count, treating anything that is not a finite number as zero.
- *
- * @param value The raw value from the response.
- * @returns The number, or `0`.
- */
-function toCount(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}
 
 /**
  * Reads token usage from an OpenAI Responses API payload.

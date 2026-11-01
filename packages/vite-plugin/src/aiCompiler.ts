@@ -30,11 +30,12 @@ const DEV_SUMMARY_QUIET_MS = 2000;
  * build.
  *
  * The plugin reads `tsconfig.json` and `.ai-rc.json` from Vite's resolved root.
- * The config file must contain an OpenAI `apiKey`; `model`, `cache`, and
- * `generatedDir` are optional and default to `gpt-4.1-mini`, `true`, and
- * `.ai-cache`. On a cache miss, the instruction and inferred type schema are
- * sent to OpenAI, but array contents are not. Generated functions are
- * validated before the call is rewritten.
+ * The config file must contain an `apiKey` unless `provider` is `openai-compatible`.
+ * `provider` defaults to `openai`, and
+ * `model` defaults to `gpt-4.1-mini` for OpenAI (other providers require it). `cache`
+ * and `generatedDir` default to `true` and `.ai-cache`. On a cache miss, the instruction
+ * and inferred type schema are sent to the configured provider, but array contents are
+ * not. Generated functions are validated before the call is rewritten.
  *
  * @returns A Vite plugin that performs the AI call transformations.
  *

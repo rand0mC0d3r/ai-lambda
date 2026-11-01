@@ -11,6 +11,16 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * Converts an unknown value to a count, treating anything that is not a finite number as zero.
+ *
+ * @param value The raw value from a provider response.
+ * @returns The number, or `0`.
+ */
+export function toCount(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/**
  * Computes a SHA-256 hex digest, used to build cache file names.
  *
  * @param value The text to hash.

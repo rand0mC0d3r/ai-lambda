@@ -7,12 +7,15 @@ import { translate } from '../translations/en.js';
  *
  * @param result The parsed response body.
  * @returns The concatenated output text.
- * @throws {AIPluginError} With code `openai_response` when the response is malformed,
+ * @throws {AIPluginError} With code `provider_response` when the response is malformed,
  * contains a refusal, or has no text.
  */
 export function extractGeneratedText(result: unknown): string {
   if (!isRecord(result)) {
-    throw new AIPluginError(translate('invalidOpenAiResponse'), 'openai_response');
+    throw new AIPluginError(
+      translate('invalidProviderResponse', { provider: 'OpenAI' }),
+      'provider_response'
+    );
   }
 
   if (
@@ -58,8 +61,11 @@ export function extractGeneratedText(result: unknown): string {
   if (output.trim()) return output;
   if (refusals.length) {
     throw new AIPluginError(
-      translate('openAiRefusal', { refusal: refusals.join(' ') }),
-      'openai_response'
+      translate('providerRefusal', {
+        provider: 'OpenAI',
+        refusal: refusals.join(' ')
+      }),
+      'provider_response'
     );
   }
 
@@ -73,8 +79,9 @@ export function extractGeneratedText(result: unknown): string {
 
   throw new AIPluginError(
     translate('noGeneratedText', {
+      provider: 'OpenAI',
       details: details.length ? ` (${details.join(', ')})` : ''
     }),
-    'openai_response'
+    'provider_response'
   );
 }

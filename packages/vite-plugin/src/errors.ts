@@ -8,9 +8,9 @@ export type AIErrorCode =
   | 'unsupported_type'
   | 'type_check'
   | 'invalid_generated'
-  | 'openai_http'
-  | 'openai_network'
-  | 'openai_response';
+  | 'provider_http'
+  | 'provider_network'
+  | 'provider_response';
 
 /**
  * Error thrown by the plugin, tagged with an {@link AIErrorCode} so callers can

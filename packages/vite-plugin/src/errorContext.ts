@@ -42,11 +42,11 @@ function getCodeInsight(error: AIPluginError): string | undefined {
       return translate('typeCheckInsight', { tsconfigFile: TSCONFIG_FILE });
     case 'invalid_generated':
       return translate('validationInsight');
-    case 'openai_network':
+    case 'provider_network':
       return translate('transformInsight');
-    case 'openai_response':
+    case 'provider_response':
       return translate('invalidResponseInsight');
-    case 'openai_http': {
+    case 'provider_http': {
       const status = error.status ?? 0;
 
       if (status === 401 || status === 403) {
@@ -80,10 +80,10 @@ function getInsight(
     if (codeInsight) return codeInsight;
   }
 
-  const isOpenAiHttpError =
-    error instanceof AIPluginError && error.code === 'openai_http';
+  const isProviderHttpError =
+    error instanceof AIPluginError && error.code === 'provider_http';
 
-  if (stage === 'transform' && !isOpenAiHttpError) {
+  if (stage === 'transform' && !isProviderHttpError) {
     return translate('transformInsight');
   }
 
