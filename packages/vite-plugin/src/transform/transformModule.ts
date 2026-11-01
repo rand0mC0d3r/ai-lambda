@@ -70,21 +70,6 @@ export async function transformModule(
       );
     }
 
-    let hasAiCall = false;
-
-    function findAiCall(node: Node): void {
-      if (isAiCall(node)) {
-        hasAiCall = true;
-        return;
-      }
-
-      node.forEachChild(findAiCall);
-    }
-
-    findAiCall(programSource);
-
-    if (!hasAiCall) return null;
-
     const replacements: {
       start: number;
       end: number;
@@ -95,17 +80,19 @@ export async function transformModule(
       if (isAiCall(node)) {
         const spec = aiFunctionSpecs[node.expression.name.text];
         const instructionNode = node.arguments[0];
+        const instruction = instructionNode && isStringLiteral(instructionNode)
+          ? instructionNode.text
+          : undefined;
         const items = node.expression.expression;
         const initialValue = node.arguments[1];
+        const acceptsTypeArguments =
+          spec.kind === 'map' || spec.kind === 'reduce';
 
         try {
           if (
-            !instructionNode ||
-            !isStringLiteral(instructionNode) ||
+            instruction === undefined ||
             node.arguments.length !== (spec.kind === 'reduce' ? 2 : 1) ||
-            (node.typeArguments &&
-              spec.kind !== 'map' &&
-              spec.kind !== 'reduce')
+            (node.typeArguments && !acceptsTypeArguments)
           ) {
             throw new Error(
               translate('invalidInvocation', {
@@ -139,15 +126,13 @@ export async function transformModule(
             config,
             root,
             spec,
-            instructionNode.text,
+            instruction,
             schema,
             api,
             parameterSchemas
           );
 
-          const typeArguments =
-            (spec.kind === 'map' || spec.kind === 'reduce') &&
-            node.typeArguments
+          const typeArguments = acceptsTypeArguments && node.typeArguments
             ? `<${node.typeArguments.map((type) => type.getText(programSource)).join(', ')}>`
             : '';
           const reducerArguments = spec.kind === 'reduce'
@@ -169,9 +154,7 @@ export async function transformModule(
             line: location.line + 1,
             column: location.character + 1,
             method: spec.method,
-            instruction: instructionNode && isStringLiteral(instructionNode)
-              ? instructionNode.text
-              : '',
+            instruction: instruction ?? '',
             model: config.model
           });
         }
