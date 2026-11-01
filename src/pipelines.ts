@@ -29,19 +29,6 @@ export const pipelines: Pipeline[] = [
         }))
   },
   {
-    label: 'In stock, sort, then 10% off',
-    run: () =>
-      cart
-        .filter((item) => item.inStock)
-        .sortAi(
-          'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
-        )
-        .map((item) => ({
-          ...item,
-          unitPrice: Math.round(item.unitPrice * 90) / 100
-        }))
-  },
-  {
     label: 'Filter with AI, then sort',
     run: () =>
       cart
@@ -113,5 +100,34 @@ export const pipelines: Pipeline[] = [
         .sortAi(
           'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
         )
+  },
+  {
+    label: 'Regular map, AI filter, native sort',
+    run: () =>
+      cart
+        .map((item) => ({
+          ...item,
+          unitPrice: Math.round(item.unitPrice * 90) / 100
+        }))
+        .filterAi(
+          'Keep only items that are in stock and have a unit price above 5 dollars.'
+        )
+        .toSorted((a, b) => b.quantity * b.unitPrice - a.quantity * a.unitPrice)
+  },
+  {
+    label: 'Sort, regular filter, then sort back',
+    run: () =>
+      cart
+        .sortAi(
+          'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
+        )
+        .filter((item) => item.quantity > 1)
+        .sortAi(
+          'Sort by total line price (quantity multiplied by unit price), lowest first. When prices are equal, sort product names in natural alphabetical order.'
+        )
+  },
+  {
+    label: 'Sort by id, then native reverse',
+    run: () => cart.sortAi('Sort by id, lowest first.').toReversed()
   }
 ];
