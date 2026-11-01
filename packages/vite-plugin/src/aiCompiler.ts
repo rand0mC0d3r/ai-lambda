@@ -4,6 +4,7 @@ import {
   type Snapshot
 } from 'typescript/unstable/sync';
 import type { Plugin } from 'vite';
+import { createFilter, type Logger } from 'vite';
 import {
     AI_CONFIG_FILE,
     TSCONFIG_FILE,
@@ -14,6 +15,8 @@ import { createConfigurationError } from './errorContext.js';
 import { translate } from './translations/en.js';
 import { transformModule } from './transform/transformModule.js';
 import type { AIConfig } from './types.js';
+
+const shouldTransform = createFilter(/\.[jt]sx?$/, [/node_modules/, /\0/]);
 
 /**
  * Creates a Vite plugin that compiles `sortAi`, `filterAi`, `mapAi`, and
@@ -75,6 +78,7 @@ export function aiCompiler(): Plugin {
   let config: AIConfig;
   let root: string;
   let tsconfigPath: string;
+  let logger: Logger;
   let api: API | undefined;
   let initialSnapshot: Snapshot | undefined;
 
@@ -99,6 +103,7 @@ export function aiCompiler(): Plugin {
 
     async configResolved(resolved) {
       root = resolved.root;
+      logger = resolved.logger;
       tsconfigPath = path.resolve(root, TSCONFIG_FILE);
       api = new API();
 
@@ -134,13 +139,16 @@ export function aiCompiler(): Plugin {
     },
 
     async transform(source, id) {
+      if (!shouldTransform(id)) return null;
+
       return transformModule(
         source,
         id,
         getApi,
         tsconfigPath,
         config,
-        root
+        root,
+        logger
       );
     },
 

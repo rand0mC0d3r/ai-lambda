@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { API } from 'typescript/unstable/sync';
+import { createLogger } from 'vite';
 import { aiFunctionSpecs } from '../../src/constants.js';
 import { hash } from '../../src/utils.js';
 import type { AIConfig } from '../../src/types.js';
@@ -159,7 +160,7 @@ describe('generateAiFunction', () => {
 
   it('surfaces service errors and malformed response payloads', async () => {
     const projectRoot = await createRoot();
-    fetchMock.mockResolvedValue(new Response('upstream failed', { status: 500 }));
+    fetchMock.mockImplementation(async () => new Response('upstream failed', { status: 500 }));
     await expect(
       generateAiFunction(
         config,
@@ -170,6 +171,7 @@ describe('generateAiFunction', () => {
         api()
       )
     ).rejects.toThrow('OpenAI error 500: upstream failed');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
 
     fetchMock.mockResolvedValue(response({ output_text: 'not JSON' }));
     await expect(
@@ -213,5 +215,163 @@ describe('generateAiFunction', () => {
       )
     ).resolves.toBe('(a, b) => 0');
     await expect(readFile(path.join(projectRoot, '.cache'))).rejects.toThrow();
+  });
+
+  it('retries rate limits and honors Retry-After', async () => {
+    const projectRoot = await createRoot();
+    fetchMock
+      .mockResolvedValueOnce(new Response('slow down', {
+        status: 429,
+        headers: { 'retry-after': '0' }
+      }))
+      .mockResolvedValueOnce(
+        response({ output_text: JSON.stringify({ predicate: '(item) => item.active' }) })
+      );
+
+    await expect(
+      generateAiFunction(
+        config,
+        projectRoot,
+        aiFunctionSpecs.filterAi,
+        instruction,
+        schema,
+        api()
+      )
+    ).resolves.toBe('(item) => item.active');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries network failures and then throws a typed network error', async () => {
+    const projectRoot = await createRoot();
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+
+    const promise = generateAiFunction(
+      config,
+      projectRoot,
+      aiFunctionSpecs.filterAi,
+      instruction,
+      schema,
+      api()
+    );
+
+    await expect(promise).rejects.toMatchObject({
+      code: 'openai_network',
+      message: 'OpenAI request failed after 3 attempt(s): fetch failed'
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retry client errors and exposes the HTTP status', async () => {
+    const projectRoot = await createRoot();
+    fetchMock.mockImplementation(async () => response({ error: 'bad key' }, 401));
+
+    await expect(
+      generateAiFunction(
+        config,
+        projectRoot,
+        aiFunctionSpecs.filterAi,
+        instruction,
+        schema,
+        api()
+      )
+    ).rejects.toMatchObject({ code: 'openai_http', status: 401 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('regenerates when a cache file is unreadable JSON', async () => {
+    const projectRoot = await createRoot();
+    const cacheKey = hash(JSON.stringify({
+      instruction,
+      schema,
+      model: config.model,
+      compilerVersion: 1,
+      kind: 'filter'
+    }));
+    const cacheDir = path.join(projectRoot, '.cache');
+    await mkdir(cacheDir, { recursive: true });
+    await writeFile(path.join(cacheDir, `${cacheKey}.json`), '{"predicate":');
+    fetchMock.mockResolvedValue(
+      response({ output_text: JSON.stringify({ predicate: '(item) => item.active' }) })
+    );
+    const logger = createLogger();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      generateAiFunction(
+        config,
+        projectRoot,
+        aiFunctionSpecs.filterAi,
+        instruction,
+        schema,
+        api(),
+        undefined,
+        undefined,
+        logger
+      )
+    ).resolves.toBe('(item) => item.active');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('unreadable cache file'));
+    expect(
+      await readFile(path.join(cacheDir, `${cacheKey}.json`), 'utf8')
+    ).toContain('(item) => item.active');
+  });
+
+  it('shares one request between concurrent identical generations', async () => {
+    const projectRoot = await createRoot();
+    fetchMock.mockImplementation(async () =>
+      response({ output_text: JSON.stringify({ predicate: '(item) => item.active' }) })
+    );
+
+    const results = await Promise.all([
+      generateAiFunction(config, projectRoot, aiFunctionSpecs.filterAi, instruction, schema, api()),
+      generateAiFunction(config, projectRoot, aiFunctionSpecs.filterAi, instruction, schema, api())
+    ]);
+
+    expect(results).toEqual(['(item) => item.active', '(item) => item.active']);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes cache files atomically without leftover temp files', async () => {
+    const projectRoot = await createRoot();
+    fetchMock.mockResolvedValue(
+      response({ output_text: JSON.stringify({ predicate: '(item) => item.active' }) })
+    );
+
+    await generateAiFunction(
+      config,
+      projectRoot,
+      aiFunctionSpecs.filterAi,
+      instruction,
+      schema,
+      api()
+    );
+
+    const files = await readdir(path.join(projectRoot, '.cache'));
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/\.json$/);
+  });
+
+  it('routes progress messages through the provided Vite logger', async () => {
+    const projectRoot = await createRoot();
+    fetchMock.mockResolvedValue(
+      response({ output_text: JSON.stringify({ predicate: '(item) => item.active' }) })
+    );
+    const logger = createLogger();
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+
+    await generateAiFunction(
+      { ...config, cache: false },
+      projectRoot,
+      aiFunctionSpecs.filterAi,
+      instruction,
+      schema,
+      api(),
+      undefined,
+      undefined,
+      logger
+    );
+
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('AI compiling filterAi()'));
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('Generated:'));
   });
 });

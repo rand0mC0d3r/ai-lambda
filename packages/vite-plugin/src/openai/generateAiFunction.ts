@@ -1,6 +1,8 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import type { API } from 'typescript/unstable/sync';
 import path from 'node:path';
+import { createLogger, type Logger } from 'vite';
 import type {
   AIFunctionParameterSchema,
   AIFunctionSpec,
@@ -8,8 +10,13 @@ import type {
 } from '../aiFunctions.js';
 import {
   COMPILER_VERSION,
-  OPENAI_RESPONSES_URL
+  OPENAI_MAX_RETRIES,
+  OPENAI_MAX_RETRY_AFTER_MS,
+  OPENAI_RESPONSES_URL,
+  OPENAI_RETRY_BASE_DELAY_MS,
+  OPENAI_TIMEOUT_MS
 } from '../constants.js';
+import { AIPluginError } from '../errors.js';
 import { validateAiFunction } from '../functions/validateAiFunction.js';
 import type { AIConfig } from '../types.js';
 import { hash, isRecord } from '../utils.js';
@@ -17,6 +24,8 @@ import { extractGeneratedText } from './extractGeneratedText.js';
 import { translate } from '../translations/en.js';
 
 type ParameterSchemas = Record<string, AIFunctionParameterSchema>;
+
+const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 
 async function readCache(cacheFile: string): Promise<string | undefined> {
   try {
@@ -35,7 +44,90 @@ function getGeneratedFunction(
   return typeof value === 'string' ? value : undefined;
 }
 
-export async function generateAiFunction(
+function parseCachedJson(
+  cached: string,
+  cacheFile: string,
+  logger: Logger
+): unknown {
+  try {
+    return JSON.parse(cached);
+  } catch {
+    logger.warn(`Ignoring unreadable cache file ${cacheFile}; regenerating.`);
+    return undefined;
+  }
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getRetryDelayMs(response: Response, attempt: number): number {
+  const retryAfter = response.headers.get('retry-after');
+  const seconds = retryAfter === null ? Number.NaN : Number(retryAfter);
+
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(seconds * 1000, OPENAI_MAX_RETRY_AFTER_MS);
+  }
+
+  return OPENAI_RETRY_BASE_DELAY_MS * 2 ** attempt;
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  logger: Logger
+): Promise<Response> {
+  const maxAttempts = OPENAI_MAX_RETRIES + 1;
+
+  for (let attempt = 0; ; attempt++) {
+    const isLastAttempt = attempt + 1 >= maxAttempts;
+    let response: Response;
+
+    try {
+      response = await fetch(url, {
+        ...init,
+        signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS)
+      });
+    } catch (error) {
+      if (isLastAttempt) {
+        throw new AIPluginError(
+          translate('openAiNetworkError', {
+            attempts: maxAttempts,
+            cause: describeError(error)
+          }),
+          'openai_network',
+          { cause: error }
+        );
+      }
+
+      const delay = OPENAI_RETRY_BASE_DELAY_MS * 2 ** attempt;
+      logger.warn(`OpenAI request failed: ${describeError(error)}. Retrying in ${delay}ms.`);
+      await wait(delay);
+      continue;
+    }
+
+    if (
+      response.ok ||
+      isLastAttempt ||
+      !RETRYABLE_STATUSES.has(response.status)
+    ) {
+      return response;
+    }
+
+    const delay = getRetryDelayMs(response, attempt);
+    logger.warn(`OpenAI returned ${response.status}. Retrying in ${delay}ms.`);
+    await response.body?.cancel().catch(() => undefined);
+    await wait(delay);
+  }
+}
+
+const inFlight = new Map<string, Promise<string>>();
+
+export function generateAiFunction(
   config: AIConfig,
   root: string,
   spec: AIFunctionSpec,
@@ -43,7 +135,8 @@ export async function generateAiFunction(
   schema: Record<string, string>,
   api: API,
   parameterSchemas?: ParameterSchemas,
-  resultShape?: ResultShape
+  resultShape?: ResultShape,
+  logger: Logger = createLogger()
 ): Promise<string> {
   const cacheKey = hash(JSON.stringify({
     instruction,
@@ -59,17 +152,54 @@ export async function generateAiFunction(
 
   const cacheDir = path.resolve(root, config.generatedDir);
   const cacheFile = path.join(cacheDir, `${cacheKey}.json`);
+  const pending = inFlight.get(cacheFile);
 
+  if (pending) return pending;
+
+  const generation = compileAiFunction(
+    config,
+    cacheDir,
+    cacheFile,
+    spec,
+    instruction,
+    schema,
+    api,
+    parameterSchemas,
+    resultShape,
+    logger
+  ).finally(() => {
+    inFlight.delete(cacheFile);
+  });
+
+  inFlight.set(cacheFile, generation);
+  return generation;
+}
+
+async function compileAiFunction(
+  config: AIConfig,
+  cacheDir: string,
+  cacheFile: string,
+  spec: AIFunctionSpec,
+  instruction: string,
+  schema: Record<string, string>,
+  api: API,
+  parameterSchemas: ParameterSchemas | undefined,
+  resultShape: ResultShape | undefined,
+  logger: Logger
+): Promise<string> {
   if (config.cache) {
     const cached = await readCache(cacheFile);
+    const cachedJson = cached === undefined
+      ? undefined
+      : parseCachedJson(cached, cacheFile, logger);
 
-    if (cached !== undefined) {
-      const cachedFunction = getGeneratedFunction(JSON.parse(cached), spec);
+    if (cachedJson !== undefined) {
+      const cachedFunction = getGeneratedFunction(cachedJson, spec);
 
       if (cachedFunction === undefined) {
-        throw new Error(translate('invalidCachedFunction', {
+        throw new AIPluginError(translate('invalidCachedFunction', {
           role: spec.role
-        }));
+        }), 'invalid_cache');
       }
 
       await validateAiFunction(
@@ -84,9 +214,9 @@ export async function generateAiFunction(
     }
   }
 
-  console.log(`\n🤖 AI compiling ${spec.method}(): "${instruction}"`);
+  logger.info(`\n🤖 AI compiling ${spec.method}(): "${instruction}"`);
 
-  const response = await fetch(
+  const response = await fetchWithRetry(
     OPENAI_RESPONSES_URL,
     {
       method: 'POST',
@@ -130,36 +260,54 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
           }
         }
       })
-    }
+    },
+    logger
   );
 
   if (!response.ok) {
-    throw new Error(
+    throw new AIPluginError(
       translate('openAiHttpError', {
         status: response.status,
         body: await response.text()
-      })
+      }),
+      'openai_http',
+      { status: response.status }
     );
   }
 
-  const output = extractGeneratedText(await response.json());
+  let body: unknown;
+
+  try {
+    body = await response.json();
+  } catch (error) {
+    throw new AIPluginError(
+      translate('invalidOpenAiResponse'),
+      'openai_response',
+      { cause: error }
+    );
+  }
+
+  const output = extractGeneratedText(body);
   let parsed: unknown;
 
   try {
     parsed = JSON.parse(output);
   } catch (error) {
-    throw new Error(translate('invalidGeneratedJson', {
-      role: spec.role
-    }), {
-      cause: error
-    });
+    throw new AIPluginError(
+      translate('invalidGeneratedJson', {
+        role: spec.role
+      }),
+      'openai_response',
+      { cause: error }
+    );
   }
 
   const generated = getGeneratedFunction(parsed, spec);
 
   if (generated === undefined) {
-    throw new Error(
-      translate('missingGeneratedFunction', { role: spec.role })
+    throw new AIPluginError(
+      translate('missingGeneratedFunction', { role: spec.role }),
+      'openai_response'
     );
   }
 
@@ -175,13 +323,23 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
   if (config.cache) {
     await mkdir(cacheDir, { recursive: true });
 
-    await writeFile(
-      cacheFile,
-      JSON.stringify({ [spec.outputField]: generated }, null, 2)
-    );
+    // Write to a unique temp file and rename so readers never see a partial cache file.
+    const tempFile = `${cacheFile}.${randomUUID()}.tmp`;
+
+    try {
+      await writeFile(
+        tempFile,
+        JSON.stringify({ [spec.outputField]: generated }, null, 2)
+      );
+      await rename(tempFile, cacheFile);
+    } catch (error) {
+      await rm(tempFile, { force: true });
+      throw error;
+    }
   }
 
-  console.log(`✅ Generated: ${generated}`);
+  logger.info(`✅ Generated: ${generated}`);
 
   return generated;
 }
+

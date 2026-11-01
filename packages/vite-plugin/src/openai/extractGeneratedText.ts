@@ -1,9 +1,10 @@
+import { AIPluginError } from '../errors.js';
 import { isRecord } from '../utils.js';
 import { translate } from '../translations/en.js';
 
 export function extractGeneratedText(result: unknown): string {
   if (!isRecord(result)) {
-    throw new Error(translate('invalidOpenAiResponse'));
+    throw new AIPluginError(translate('invalidOpenAiResponse'), 'openai_response');
   }
 
   if (
@@ -48,8 +49,9 @@ export function extractGeneratedText(result: unknown): string {
 
   if (output.trim()) return output;
   if (refusals.length) {
-    throw new Error(
-      translate('openAiRefusal', { refusal: refusals.join(' ') })
+    throw new AIPluginError(
+      translate('openAiRefusal', { refusal: refusals.join(' ') }),
+      'openai_response'
     );
   }
 
@@ -61,9 +63,10 @@ export function extractGeneratedText(result: unknown): string {
     typeof result.id === 'string' && `response=${result.id}`
   ].filter(Boolean);
 
-  throw new Error(
+  throw new AIPluginError(
     translate('noGeneratedText', {
       details: details.length ? ` (${details.join(', ')})` : ''
-    })
+    }),
+    'openai_response'
   );
 }

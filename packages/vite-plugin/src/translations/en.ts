@@ -14,6 +14,7 @@ const english = {
   invalidInvocation: 'Invalid {{method}}() invocation in {{id}}',
   invalidCachedFunction: 'Invalid cached {{role}}',
   openAiHttpError: 'OpenAI error {{status}}: {{body}}',
+  openAiNetworkError: 'OpenAI request failed after {{attempts}} attempt(s): {{cause}}',
   invalidGeneratedJson: 'OpenAI returned invalid {{role}} JSON',
   missingGeneratedFunction: 'OpenAI response is missing a {{role}} string',
   invalidOpenAiResponse: 'OpenAI returned an invalid response',

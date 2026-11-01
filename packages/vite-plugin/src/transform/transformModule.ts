@@ -10,6 +10,7 @@ import {
   isStringLiteral
 } from 'typescript/unstable/ast/is';
 import type { API } from 'typescript/unstable/sync';
+import { createLogger, type Logger } from 'vite';
 import { aiFunctionSpecs } from '../constants.js';
 import {
   inferAccumulatorSchema,
@@ -39,7 +40,8 @@ export async function transformModule(
   getApi: () => API,
   tsconfigPath: string,
   config: AIConfig,
-  root: string
+  root: string,
+  logger: Logger = createLogger()
 ) {
   if (
     id.includes('node_modules') ||
@@ -140,7 +142,8 @@ export async function transformModule(
             schema,
             api,
             parameterSchemas,
-            resultShape
+            resultShape,
+            logger
           );
 
           const typeArguments = acceptsTypeArguments && node.typeArguments

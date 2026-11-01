@@ -1,4 +1,5 @@
 import { AI_CONFIG_FILE, TSCONFIG_FILE, VITE_PLUGIN_NAME } from './constants.js';
+import { AIPluginError } from './errors.js';
 import { translate } from './translations/en.js';
 
 interface TransformErrorContext {
@@ -14,16 +15,36 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function getCodeInsight(error: unknown): string | undefined {
+  if (!(error instanceof AIPluginError)) return undefined;
+
+  switch (error.code) {
+    case 'invalid_cache':
+      return translate('removeInvalidCache');
+    case 'openai_network':
+      return translate('transformInsight');
+    case 'openai_response':
+      return translate('invalidResponseInsight');
+    case 'openai_http': {
+      const status = error.status ?? 0;
+
+      if (status === 401 || status === 403) {
+        return translate('invalidCredentialsInsight');
+      }
+
+      if (status === 429) return translate('rateLimitInsight');
+      if (status >= 500) return translate('serverErrorInsight');
+      return undefined;
+    }
+  }
+}
+
 interface InsightRule {
   matches: (error: string) => boolean;
   insight: () => string;
 }
 
 const insightRules: InsightRule[] = [
-  {
-    matches: (error) => error.toLowerCase().includes('cached'),
-    insight: () => translate('removeInvalidCache')
-  },
   {
     matches: (error) => error.includes('Missing OpenAI API key'),
     insight: () => translate('addApiKey', { configFile: AI_CONFIG_FILE })
@@ -46,26 +67,6 @@ const insightRules: InsightRule[] = [
   },
   {
     matches: (error) =>
-      error.startsWith('OpenAI error 401') || error.startsWith('OpenAI error 403'),
-    insight: () => translate('invalidCredentialsInsight')
-  },
-  {
-    matches: (error) => error.startsWith('OpenAI error 429'),
-    insight: () => translate('rateLimitInsight')
-  },
-  {
-    matches: (error) => error.startsWith('OpenAI error 5'),
-    insight: () => translate('serverErrorInsight')
-  },
-  {
-    matches: (error) =>
-      (error.includes('invalid ') && error.includes(' JSON')) ||
-      error.includes('returned no generated text') ||
-      error.includes('response is missing a'),
-    insight: () => translate('invalidResponseInsight')
-  },
-  {
-    matches: (error) =>
       error.includes('generated') ||
       error.includes('Forbidden') ||
       error.includes('permitted') ||
@@ -74,14 +75,27 @@ const insightRules: InsightRule[] = [
   }
 ];
 
-function getInsight(error: string, stage: 'configuration' | 'transform'): string {
-  const rule = insightRules.find((candidate) => candidate.matches(error));
+function getInsight(
+  error: unknown,
+  cause: string,
+  stage: 'configuration' | 'transform'
+): string {
+  const codeInsight = getCodeInsight(error);
+
+  if (codeInsight) {
+    return codeInsight;
+  }
+
+  const rule = insightRules.find((candidate) => candidate.matches(cause));
 
   if (rule) {
     return rule.insight();
   }
 
-  if (stage === 'transform' && !error.startsWith('OpenAI error ')) {
+  const isOpenAiHttpError =
+    error instanceof AIPluginError && error.code === 'openai_http';
+
+  if (stage === 'transform' && !isOpenAiHttpError) {
     return translate('transformInsight');
   }
 
@@ -101,7 +115,7 @@ export function createConfigurationError(error: unknown, root: string): Error {
       tsconfigFile: TSCONFIG_FILE,
       configFile: AI_CONFIG_FILE,
       cause,
-      insight: getInsight(cause, 'configuration')
+      insight: getInsight(error, cause, 'configuration')
     }),
     { cause: error }
   );
@@ -127,7 +141,7 @@ export function createTransformError(
       model: context.model,
       instruction: JSON.stringify(instruction),
       cause,
-      insight: getInsight(cause, 'transform')
+      insight: getInsight(error, cause, 'transform')
     }),
     { cause: error }
   );

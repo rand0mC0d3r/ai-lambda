@@ -86,7 +86,8 @@ const result = products
         { name: 'string', price: 'number', active: 'boolean' },
         expect.anything(),
         undefined,
-        undefined
+        undefined,
+        expect.anything()
       );
     } finally {
       callCloseBundle(plugin);
@@ -136,7 +137,8 @@ const summary = products.reduceAi<Summary>('summary', { total: 0, label: '' });
         },
         expect.anything(),
         undefined,
-        undefined
+        undefined,
+        expect.anything()
       );
       expect(generation.generateAiFunction).toHaveBeenNthCalledWith(
         2,
@@ -153,7 +155,8 @@ const summary = products.reduceAi<Summary>('summary', { total: 0, label: '' });
             fields: expect.objectContaining({ price: 'number' })
           }
         },
-        undefined
+        undefined,
+        expect.anything()
       );
       expect(generation.generateAiFunction).toHaveBeenNthCalledWith(
         3,
@@ -174,7 +177,8 @@ const summary = products.reduceAi<Summary>('summary', { total: 0, label: '' });
             fields: expect.objectContaining({ name: 'string' })
           }
         },
-        undefined
+        undefined,
+        expect.anything()
       );
       expect(generation.generateAiFunction).toHaveBeenNthCalledWith(
         4,
@@ -194,7 +198,8 @@ const summary = products.reduceAi<Summary>('summary', { total: 0, label: '' });
             fields: expect.objectContaining({ name: 'string' })
           }
         },
-        { fields: { total: 'number', label: 'string' }, optionalFields: [] }
+        { fields: { total: 'number', label: 'string' }, optionalFields: [] },
+        expect.anything()
       );
     } finally {
       callCloseBundle(plugin);
@@ -207,6 +212,7 @@ const summary = products.reduceAi<Summary>('summary', { total: 0, label: '' });
     expect(await callTransform(plugin, 'const x = 1', '/project/node_modules/x.js')).toBeNull();
     expect(await callTransform(plugin, 'const x = 1', '/project/file.json')).toBeNull();
     expect(await callTransform(plugin, 'const x = 1', '/project/file.ts')).toBeNull();
+    expect(await callTransform(plugin, 'const x = 1', '\0virtual.ts')).toBeNull();
   });
 
   it('returns null when the method name is not a property access call', async () => {

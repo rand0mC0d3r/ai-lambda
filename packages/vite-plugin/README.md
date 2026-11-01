@@ -48,6 +48,7 @@ const cheapestFirst = products.toSorted((a, b) => a.price - b.price);
 - **Zero runtime AI cost**: the output is plain JavaScript; no AI code ships to the browser.
 - **Build-time generation** during both `vite` (dev server) and `vite build`.
 - **Persistent cache** of generated functions, so repeat builds make no API calls.
+- **Resilient OpenAI calls**: 60-second timeout, and automatic retries with backoff for network errors, 408, 429, and 5xx responses (honoring `Retry-After`).
 - **Type-aware**: field schemas are inferred from your `tsconfig.json` through TypeScript's compiler API.
 - **Validated output**: generated code must pass a restricted grammar before it is used.
 - **Chainable**: combine AI methods with each other and with native array methods.
@@ -233,7 +234,7 @@ flowchart TD
 3. The TypeScript checker infers the element schema of the receiver array (and the accumulator type for `reduceAi`).
 4. On a cache miss, the instruction, the inferred schema, and the method's rules are sent to OpenAI's Responses API (`https://api.openai.com/v1/responses`). **Array contents are never sent.**
 5. The generated function is validated, cached (if enabled), and the call is rewritten.
-6. Each generation is logged to the console: the instruction when it starts, and the generated function when it finishes.
+6. Each generation is logged through Vite's logger: the instruction when it starts, and the generated function when it finishes. Identical concurrent generations share one OpenAI request.
 
 If generation or validation fails, the transform fails. The plugin never leaves an uncompiled AI call in the output.
 
@@ -254,6 +255,8 @@ Changing any of these triggers regeneration. Cached files contain the generated 
 **Ignore the cache** (default, recommended for most projects) or **commit it** if you want CI builds to run without OpenAI access or cost. Committing it means reviewing new cache files in pull requests like any other code.
 
 To force regeneration, delete the relevant file in `.ai-cache/` or the whole directory.
+
+Cache writes are atomic (written to a temporary file, then renamed), so an interrupted build does not leave a partial file. If a cached file is unreadable or invalid, the plugin logs a warning and regenerates it.
 
 ## Security model
 
@@ -285,8 +288,9 @@ Configuration and transform errors are prefixed with `[ai-compile-time]`.
 | `Unable to type-check AI call` / `source does not match the TypeScript project` | Make sure the file is included in `tsconfig.json`, and that no other plugin rewrites the source before this one runs. |
 | Unsupported field type | Use `string`, `number`, `boolean`, or `Date` fields; avoid mixed unions and nested objects. |
 | Invalid invocation | Pass a literal string; `reduceAi` also needs an initial value. Type arguments are supported only on `mapAi` and `reduceAi`. |
-| `Invalid cached ...` | Delete the invalid file in `generatedDir` and rebuild so it is regenerated. |
-| `OpenAI error 401` / `429` / `5xx` | Verify the key and model access (401), check quota and rate limits (429), or retry later (5xx). |
+| `Invalid cached ...` warning | The plugin regenerates the entry automatically. If it keeps happening, delete the file in `generatedDir`. |
+| `OpenAI error 401` / `429` / `5xx` | Verify the key and model access (401). For 429 and 5xx, the plugin already retried; check quota and rate limits, or retry the build later. |
+| `OpenAI request failed after N attempt(s)` | Check connectivity and proxy settings. The plugin already retried, and each request times out after 60 seconds. |
 | Generation refused or validation error | Simplify the instruction to supported fields and helpers, then retry. |
 | `sortAi` missing at runtime | Confirm the plugin is registered and the call is in a transformed JS/TS module. Check `toSorted` support too. |
 
