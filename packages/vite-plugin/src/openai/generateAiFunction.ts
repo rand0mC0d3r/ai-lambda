@@ -17,6 +17,23 @@ import { translate } from '../translations/en.js';
 
 type ParameterSchemas = Record<string, AIFunctionParameterSchema>;
 
+async function readCache(cacheFile: string): Promise<string | undefined> {
+  try {
+    return await readFile(cacheFile, 'utf8');
+  } catch (error) {
+    if (isRecord(error) && error.code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
+function getGeneratedFunction(
+  parsed: unknown,
+  spec: AIFunctionSpec
+): string | undefined {
+  const value = isRecord(parsed) ? parsed[spec.outputField] : undefined;
+  return typeof value === 'string' ? value : undefined;
+}
+
 export async function generateAiFunction(
   config: AIConfig,
   root: string,
@@ -40,24 +57,12 @@ export async function generateAiFunction(
   const cacheFile = path.join(cacheDir, `${cacheKey}.json`);
 
   if (config.cache) {
-    let cached: string | undefined;
-
-    try {
-      cached = await readFile(cacheFile, 'utf8');
-    } catch (error) {
-      if (!isRecord(error) || error.code !== 'ENOENT') {
-        throw error;
-      }
-    }
+    const cached = await readCache(cacheFile);
 
     if (cached !== undefined) {
-      const parsed: unknown = JSON.parse(cached);
+      const cachedFunction = getGeneratedFunction(JSON.parse(cached), spec);
 
-      const cachedFunction = isRecord(parsed)
-        ? parsed[spec.outputField]
-        : undefined;
-
-      if (typeof cachedFunction !== 'string') {
+      if (cachedFunction === undefined) {
         throw new Error(translate('invalidCachedFunction', {
           role: spec.role
         }));
@@ -132,8 +137,7 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
     );
   }
 
-  const result: unknown = await response.json();
-  const output = extractGeneratedText(result);
+  const output = extractGeneratedText(await response.json());
   let parsed: unknown;
 
   try {
@@ -146,11 +150,9 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
     });
   }
 
-  const generated = isRecord(parsed)
-    ? parsed[spec.outputField]
-    : undefined;
+  const generated = getGeneratedFunction(parsed, spec);
 
-  if (typeof generated !== 'string') {
+  if (generated === undefined) {
     throw new Error(
       translate('missingGeneratedFunction', { role: spec.role })
     );
