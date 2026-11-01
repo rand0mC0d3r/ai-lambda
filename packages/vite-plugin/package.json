@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-ai-lambda",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Compile natural-language array operations into JavaScript during Vite builds.",
   "license": "ISC",
   "type": "module",
