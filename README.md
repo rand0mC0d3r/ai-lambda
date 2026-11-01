@@ -22,7 +22,7 @@ Register `aiCompiler()` in `vite.config.ts` and create an `.ai-rc.json` in the p
 
 ## ✨ What it demonstrates
 
-- `sortAi`, `filterAi`, and `mapAi` array operations written as natural-language instructions.
+- `sortAi`, `filterAi`, `mapAi`, and `reduceAi` array operations written as natural-language instructions.
 - TypeScript-based inference of the array item schema.
 - Build-time generation and validation of simple JavaScript functions.
 - Local caching of generated functions.
@@ -73,7 +73,7 @@ npm run preview
 
 ## 🧩 How it works
 
-1. The Vite plugin scans project TypeScript and JavaScript for calls named `sortAi`, `filterAi`, or `mapAi`.
+1. The Vite plugin scans project TypeScript and JavaScript for calls named `sortAi`, `filterAi`, `mapAi`, or `reduceAi`.
 2. TypeScript infers the item fields and supported field types from the array expression.
 3. On a cache miss, the plugin sends the instruction and inferred schema to OpenAI. **It does not send the array's runtime items.**
 4. The generated function is validated and, by default, stored under `.ai-cache/`.
@@ -93,9 +93,10 @@ items.toSorted((a, b) => a.price - b.price);
 
 The exact comparator is generated from your instruction and the inferred schema.
 
-## 🛠️ The three operations
+## 🛠️ The AI operations
 
-All instructions must be **string literals** and each AI method takes exactly one argument.
+All instructions must be **string literals**. `sortAi`, `filterAi`, and
+`mapAi` take one argument; `reduceAi` takes an instruction and an initial value.
 
 ### Sort: `sortAi`
 
@@ -150,24 +151,75 @@ const summaries = products.mapAi<ProductSummary>(
 
 `mapAi` compiles to native `map`. The generated mapper is checked against the input schema; use a clear instruction and a result type that matches the generated object.
 
+### Reduce: `reduceAi`
+
+Describe how to update the accumulator for each item. The initial value
+determines the accumulator and return type.
+
+```ts
+const inStockValue = cart.reduceAi(
+  'Add each in-stock item quantity multiplied by its unitPrice to the running total.',
+  0
+);
+```
+
+`reduceAi` compiles to native `reduce`; the generated reducer receives `acc`
+and `item`.
+
 ## 🔗 Compose operations
 
-AI methods can be chained with one another and with native array methods. Calls run from left to right, so changing their order can change the result.
+Native ES6 arrow functions are regular JavaScript callbacks. Use them for
+explicit, predictable logic, and use an AI method when a natural-language
+instruction is more convenient. Calls in a chain run from left to right.
+
+For example, these native callbacks filter and sort with ordinary JavaScript:
+
+```ts
+const inStock = cart.filter((item) => item.inStock);
+
+const biggestLinesFirst = inStock.toSorted(
+  (a, b) => b.quantity * b.unitPrice - a.quantity * a.unitPrice
+);
+```
+
+The same values can flow through native arrow callbacks and AI-powered
+operations in one pipeline:
 
 ```ts
 const saleItems = cart
-  .mapAi(
-    'Apply a 10% discount to unitPrice, rounded to two decimals, and keep all other fields.'
-  )
+  .filter((item) => item.inStock)
+  .map((item) => ({
+    ...item,
+    unitPrice: Math.round(item.unitPrice * 90) / 100
+  }))
   .filterAi(
-    'Keep only items that are in stock and have a unit price above 5 dollars.'
+    'Keep only items with a discounted unit price above 5 dollars.'
   )
   .sortAi(
     'Sort by total line price (quantity multiplied by unit price), highest first.'
+  )
+  .filter((item) => item.quantity > 1);
+```
+
+Here, the native `filter` and `map` callbacks run as ordinary JavaScript,
+`filterAi` and `sortAi` are generated during development/build, and the final
+native `filter` runs after them. AI instructions must remain string literals.
+
+You can also use an AI operation before a native arrow callback or native
+reducer:
+
+```ts
+const totalForAccessories = cart
+  .filterAi('Keep only items in the Accessories category.')
+  .filter((item) => item.inStock)
+  .reduce(
+    (total, item) => total + item.quantity * item.unitPrice,
+    0
   );
 ```
 
-Compare filtering before and after the discount:
+Compare filtering before and after a discount to see how operation order
+changes the result:
 
 ```ts
 // The threshold is evaluated against the original unitPrice.
@@ -198,6 +250,7 @@ The repository's demo offers more combinations—including native `filter`, `toS
 | `sortAi(instruction)` | `toSorted(comparator)` | No |
 | `filterAi(instruction)` | `filter(predicate)` | No |
 | `mapAi(instruction)` | `map(mapper)` | No |
+| `reduceAi(instruction, initialValue)` | `reduce(reducer, initialValue)` | No |
 
 Prefer native array methods for rules that are straightforward to express in code. AI methods add generation and an OpenAI dependency to development/build; they are useful here for demonstrating how a natural-language rule can become a typed, inspectable function.
 
