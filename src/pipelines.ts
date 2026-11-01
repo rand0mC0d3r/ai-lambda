@@ -18,7 +18,7 @@ export const pipelines: Pipeline[] = [
       cart
         .filter((item) => item.category === 'Peripherals')
         .reduceAi<CartItem[]>(
-          'Return a new array containing only items that are in stock and have a unitPrice above 50 dollars. Append each matching item to acc; otherwise return acc unchanged.',
+          'Return a new array containing only items that are not in stock and have a unitPrice above 20 dollars. Append each matching item to acc; otherwise return acc unchanged.',
           []
         )
         .map(tenPercentOff)

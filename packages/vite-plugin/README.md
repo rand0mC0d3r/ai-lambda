@@ -268,6 +268,14 @@ To force regeneration, delete the relevant file in `.ai-cache/` or the whole dir
 
 Cache writes are atomic (written to a temporary file, then renamed), so an interrupted build does not leave a partial file. If a cached file is unreadable or invalid, the plugin logs a warning and regenerates it.
 
+## Build output
+
+Each AI call logs its model, duration, attempts, token usage, and estimated cost. Cache hits are logged as `cache hit` with no API call.
+
+When `vite build` finishes (and after each rebuild in watch mode), the plugin prints a summary: call counts, token totals, estimated cost, API and build time, and the slowest call. With `vite` (dev server), the summary prints about two seconds after AI activity settles, and again when the server shuts down. Dev totals accumulate across the session.
+
+Costs are estimates from a built-in table of standard-tier list prices per 1M tokens, not billing data. Models without an entry show `cost n/a`. Check your OpenAI invoice for actual charges.
+
 ## Security model
 
 - **Your API key** lives in `.ai-rc.json`. Never commit it.

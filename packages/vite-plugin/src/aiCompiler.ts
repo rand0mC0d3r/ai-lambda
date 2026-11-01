@@ -12,11 +12,15 @@ import {
 } from './constants.js';
 import { readAiConfig } from './config.js';
 import { createConfigurationError } from './errorContext.js';
+import { completedAiCallCount, formatBuildSummary, resetAiCallReport } from './reporting/aiCallReport.js';
 import { translate } from './translations/en.js';
 import { transformModule } from './transform/transformModule.js';
 import type { AIConfig } from './types.js';
 
 const shouldTransform = createFilter(/\.[jt]sx?$/, [/node_modules/, /\0/]);
+
+// Dev servers never run closeBundle, so their summary waits for AI activity to settle.
+const DEV_SUMMARY_QUIET_MS = 2000;
 
 /**
  * Creates a Vite plugin that compiles `sortAi`, `filterAi`, `findAi`, `someAi`,
@@ -84,6 +88,28 @@ export function aiCompiler(): Plugin {
   let logger: Logger;
   let api: API | undefined;
   let initialSnapshot: Snapshot | undefined;
+  let isDevServer = false;
+  let summarizedCalls = 0;
+  let summaryTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function logSummary(): void {
+    clearTimeout(summaryTimer);
+    summaryTimer = undefined;
+
+    // Skip when no new AI calls finished since the last summary.
+    const completed = completedAiCallCount();
+    if (completed === summarizedCalls) return;
+    summarizedCalls = completed;
+
+    const summary = formatBuildSummary();
+    if (summary) logger.info(summary);
+  }
+
+  function scheduleSummary(): void {
+    clearTimeout(summaryTimer);
+    summaryTimer = setTimeout(logSummary, DEV_SUMMARY_QUIET_MS);
+    summaryTimer.unref();
+  }
 
   function getApi(): API {
     if (!api) {
@@ -104,9 +130,15 @@ export function aiCompiler(): Plugin {
     name: VITE_PLUGIN_NAME,
     enforce: 'pre',
 
+    buildStart() {
+      resetAiCallReport();
+      summarizedCalls = 0;
+    },
+
     async configResolved(resolved) {
       root = resolved.root;
       logger = resolved.logger;
+      isDevServer = resolved.command === 'serve';
       tsconfigPath = path.resolve(root, TSCONFIG_FILE);
       api = new API();
 
@@ -144,23 +176,32 @@ export function aiCompiler(): Plugin {
     async transform(source, id) {
       if (!shouldTransform(id)) return null;
 
-      return transformModule(
-        source,
-        id,
-        getApi,
-        tsconfigPath,
-        config,
-        root,
-        logger
-      );
+      try {
+        return await transformModule(
+          source,
+          id,
+          getApi,
+          tsconfigPath,
+          config,
+          root,
+          logger
+        );
+      } finally {
+        if (isDevServer) scheduleSummary();
+      }
     },
 
     closeBundle() {
+      logSummary();
+
       // Watch builds call closeBundle after every rebuild, so keep the API alive.
       if (!this.meta.watchMode) {
         disposeTypeScript();
       }
     },
-    closeWatcher: disposeTypeScript
+    closeWatcher() {
+      logSummary();
+      disposeTypeScript();
+    }
   };
 }

@@ -8,6 +8,7 @@ import { aiFunctionSpecs } from '../../src/constants.js';
 import { hash } from '../../src/utils.js';
 import type { AIConfig } from '../../src/types.js';
 import { generateAiFunction } from '../../src/openai/generateAiFunction.js';
+import { resetAiCallReport } from '../../src/reporting/aiCallReport.js';
 
 vi.mock('../../src/functions/validateAiFunction.js', () => ({
   validateAiFunction: vi.fn()
@@ -373,5 +374,37 @@ describe('generateAiFunction', () => {
 
     expect(info).toHaveBeenCalledWith(expect.stringContaining('AI compiling filterAi()'));
     expect(info).toHaveBeenCalledWith(expect.stringContaining('Generated:'));
+  });
+
+  it('logs per-call model, tokens, and cost, including cache hits', async () => {
+    const projectRoot = await createRoot();
+    resetAiCallReport();
+    fetchMock.mockResolvedValue(
+      response({
+        output_text: JSON.stringify({ predicate: '(item) => item.active' }),
+        usage: {
+          input_tokens: 1000,
+          input_tokens_details: { cached_tokens: 200 },
+          output_tokens: 100,
+          output_tokens_details: { reasoning_tokens: 0 }
+        }
+      })
+    );
+    const logger = createLogger();
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const modelConfig = { ...config, model: 'gpt-4.1-mini' };
+
+    await generateAiFunction(
+      modelConfig, projectRoot, aiFunctionSpecs.filterAi, instruction, schema, api(), undefined, undefined, logger
+    );
+    await generateAiFunction(
+      modelConfig, projectRoot, aiFunctionSpecs.filterAi, instruction, schema, api(), undefined, undefined, logger
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('gpt-4.1-mini · '));
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('tokens in 1000 (200 cached) / out 100'));
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('$0.000500'));
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('cache hit'));
   });
 });

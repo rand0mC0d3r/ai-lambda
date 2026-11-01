@@ -1,3 +1,0 @@
-{
-  "reducer": "(acc, item) => item.inStock && item.unitPrice > 50 ? [...acc, item] : acc"
-}

@@ -21,9 +21,22 @@ import { validateAiFunction } from '../functions/validateAiFunction.js';
 import type { AIConfig } from '../types.js';
 import { hash, isRecord } from '../utils.js';
 import { extractGeneratedText } from './extractGeneratedText.js';
+import { estimateCostUsd, readUsage, type TokenUsage } from './usage.js';
+import {
+  finishAiCall,
+  formatCallLine,
+  startAiCall,
+  type AiCallRecord
+} from '../reporting/aiCallReport.js';
 import { translate } from '../translations/en.js';
 
 type ParameterSchemas = Record<string, AIFunctionParameterSchema>;
+
+interface CallTrace {
+  attempts: number;
+  cached: boolean;
+  usage?: TokenUsage;
+}
 
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 
@@ -80,7 +93,7 @@ async function fetchWithRetry(
   url: string,
   init: RequestInit,
   logger: Logger
-): Promise<Response> {
+): Promise<{ response: Response; attempts: number }> {
   const maxAttempts = OPENAI_MAX_RETRIES + 1;
 
   for (let attempt = 0; ; attempt++) {
@@ -115,7 +128,7 @@ async function fetchWithRetry(
       isLastAttempt ||
       !RETRYABLE_STATUSES.has(response.status)
     ) {
-      return response;
+      return { response, attempts: attempt + 1 };
     }
 
     const delay = getRetryDelayMs(response, attempt);
@@ -156,6 +169,10 @@ export function generateAiFunction(
 
   if (pending) return pending;
 
+  const trace: CallTrace = { attempts: 0, cached: false };
+  const startedAt = performance.now();
+  startAiCall();
+
   const generation = compileAiFunction(
     config,
     cacheDir,
@@ -166,13 +183,69 @@ export function generateAiFunction(
     api,
     parameterSchemas,
     resultShape,
+    trace,
     logger
-  ).finally(() => {
-    inFlight.delete(cacheFile);
-  });
+  )
+    .then(
+      (generated) => {
+        completeCall(logger, {
+          spec,
+          instruction,
+          model: config.model,
+          trace,
+          startedAt,
+          outcome: trace.cached ? 'cached' : 'generated'
+        });
+        return generated;
+      },
+      (error: unknown) => {
+        completeCall(logger, {
+          spec,
+          instruction,
+          model: config.model,
+          trace,
+          startedAt,
+          outcome: 'failed',
+          errorMessage: describeError(error)
+        });
+        throw error;
+      }
+    )
+    .finally(() => {
+      inFlight.delete(cacheFile);
+    });
 
   inFlight.set(cacheFile, generation);
   return generation;
+}
+
+function completeCall(
+  logger: Logger,
+  call: {
+    spec: AIFunctionSpec;
+    instruction: string;
+    model: string;
+    trace: CallTrace;
+    startedAt: number;
+    outcome: AiCallRecord['outcome'];
+    errorMessage?: string;
+  }
+): void {
+  const { trace } = call;
+  const record: AiCallRecord = {
+    method: call.spec.method,
+    instruction: call.instruction,
+    model: call.model,
+    outcome: call.outcome,
+    durationMs: performance.now() - call.startedAt,
+    attempts: trace.attempts,
+    usage: trace.usage,
+    costUsd: trace.usage ? estimateCostUsd(call.model, trace.usage) : 0,
+    errorMessage: call.errorMessage
+  };
+
+  finishAiCall(record);
+  logger.info(`   ${formatCallLine(record)}`);
 }
 
 async function compileAiFunction(
@@ -185,6 +258,7 @@ async function compileAiFunction(
   api: API,
   parameterSchemas: ParameterSchemas | undefined,
   resultShape: ResultShape | undefined,
+  trace: CallTrace,
   logger: Logger
 ): Promise<string> {
   if (config.cache) {
@@ -210,13 +284,14 @@ async function compileAiFunction(
         parameterSchemas,
         resultShape
       );
+      trace.cached = true;
       return cachedFunction;
     }
   }
 
   logger.info(`\n🤖 AI compiling ${spec.method}(): "${instruction}"`);
 
-  const response = await fetchWithRetry(
+  const { response, attempts } = await fetchWithRetry(
     OPENAI_RESPONSES_URL,
     {
       method: 'POST',
@@ -263,6 +338,7 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
     },
     logger
   );
+  trace.attempts = attempts;
 
   if (!response.ok) {
     throw new AIPluginError(
@@ -287,6 +363,7 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
     );
   }
 
+  trace.usage = readUsage(body);
   const output = extractGeneratedText(body);
   let parsed: unknown;
 
