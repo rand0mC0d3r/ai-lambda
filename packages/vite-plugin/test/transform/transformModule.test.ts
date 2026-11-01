@@ -19,6 +19,7 @@ interface Array<T> {
   sortAi(instruction: string): T[];
   filterAi(instruction: string): T[];
   findAi(instruction: string): T | undefined;
+  someAi(instruction: string): boolean;
   mapAi<U = T>(instruction: string): U[];
   reduceAi<U>(instruction: string, initialValue: U): U;
 }
@@ -29,6 +30,7 @@ const generatedFunctions: Record<string, string> = {
   sort: '(a, b) => a.price - b.price',
   filter: '(item) => item.active',
   find: '(item) => item.name.includes("pro")',
+  some: '(item) => item.price > 100',
   map: '(item) => ({...item})',
   reduce: '(acc, item) => acc + item.price'
 };
@@ -118,6 +120,39 @@ const first = products.filterAi('active').findAi('pro product');
         expect.any(String),
         aiFunctionSpecs.findAi,
         'pro product',
+        { name: 'string', price: 'number', active: 'boolean' },
+        expect.anything(),
+        undefined,
+        undefined,
+        expect.anything()
+      );
+    } finally {
+      callCloseBundle(plugin);
+      await cleanup();
+    }
+  });
+
+  it('rewrites someAi to some and passes the some spec to generation', async () => {
+    mockGeneration();
+    const source = `${methods}
+const hasExpensive = products.filterAi('active').someAi('expensive product');
+`;
+    const { plugin, sourcePath, cleanup } = await initializedPlugin(source);
+
+    try {
+      const transformed = await callTransform(plugin, source, sourcePath);
+
+      expect(transformed).toEqual({
+        code: expect.stringContaining(
+          '.filter((item) => item.active).some((item) => item.price > 100)'
+        ),
+        map: expect.objectContaining({ version: 3 })
+      });
+      expect(generation.generateAiFunction).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(String),
+        aiFunctionSpecs.someAi,
+        'expensive product',
         { name: 'string', price: 'number', active: 'boolean' },
         expect.anything(),
         undefined,

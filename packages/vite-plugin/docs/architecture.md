@@ -36,7 +36,7 @@ The plugin uses four hooks. Blue nodes in the diagram are plugin hooks.
 | Hook | When it runs | What the plugin does |
 | --- | --- | --- |
 | `configResolved` | Once, after the Vite config is resolved | Parses the tsconfig through the TypeScript API, builds the program snapshot, then reads `.ai-rc.json` through `readAiConfig`. That step rejects non-object JSON, unknown keys, wrong value types, a missing or empty `apiKey`, and a `generatedDir` outside the Vite root. It then applies defaults (`gpt-4.1-mini`, `cache: true`, `.ai-cache`). |
-| `transform` | Once per module (build) or once per request (dev) | Rewrites `sortAi`, `filterAi`, `mapAi`, and `reduceAi` call sites in TypeScript source files. See section 2. |
+| `transform` | Once per module (build) or once per request (dev) | Rewrites `sortAi`, `filterAi`, `findAi`, `someAi`, `mapAi`, and `reduceAi` call sites in TypeScript source files. See section 2. |
 | `closeBundle` | Once, at the end of `vite build` (skipped in watch builds, which reuse the API across rebuilds) | Disposes the TypeScript snapshot and closes the TypeScript API. |
 | `closeWatcher` | When the dev server closes | Same cleanup as `closeBundle`. |
 
@@ -53,7 +53,7 @@ flowchart TD
     V -->|yes| W[Update the TypeScript<br/>snapshot with incoming code]
     W --> X{TS program text equals<br/>incoming source?}
     X -->|no| ERR1([throw: source mismatch])
-    X -->|yes| Y[Walk the AST and find<br/>sortAi / filterAi / mapAi /<br/>reduceAi calls]
+    X -->|yes| Y[Walk the AST and find<br/>sortAi / filterAi / findAi /<br/>someAi / mapAi / reduceAi<br/>calls]
     Y --> Z{For each call}
     Z --> AA[Build the instruction<br/>and schema from the<br/>TS type of the call]
     AA --> AB[generateAiFunction]
@@ -77,7 +77,7 @@ Notes on the flow:
 - The source map is hires, so stack traces and breakpoints still point at the original TypeScript lines.
 - Cache hits are still validated. A cached function that cannot be parsed or no longer matches the schema raises an error; it is not regenerated automatically. Delete the cache file to force a new generation.
 - For `mapAi<U>` and `reduceAi<U>` with an object type `U`, validation also checks the result shape: every required field must be returned, and object literal keys must be declared in `U`. Value types and scalar or array results are not checked.
-- Each call maps to a native method by its spec: `sortAi` to `toSorted`, `filterAi` to `filter`, `mapAi` to `map`, and `reduceAi` to `reduce`. The spec also sets the allowed helper methods and output role for the generated function.
+- Each call maps to a native method by its spec: `sortAi` to `toSorted`, `filterAi` to `filter`, `findAi` to `find`, `someAi` to `some`, `mapAi` to `map`, and `reduceAi` to `reduce`. The spec also sets the allowed helper methods and output role for the generated function.
 
 ## 3. An AI array call (sequence view)
 
@@ -191,7 +191,7 @@ Green nodes are bundler-independent. The diagram has no Vite-specific nodes.
 | Stage | Implementation | Notes |
 | --- | --- | --- |
 | Natural language input | Call-site `instruction` argument | Must be a string literal. The compiler reads it without running code. |
-| Instruction extraction and method selection | [src/transform/transformModule.ts](../src/transform/transformModule.ts), [src/constants.ts](../src/constants.ts) | Picks the spec (`sortAi`, `filterAi`, `mapAi`, `reduceAi`) by method name. The instruction is not parsed; it is passed to the LLM as text. |
+| Instruction extraction and method selection | [src/transform/transformModule.ts](../src/transform/transformModule.ts), [src/constants.ts](../src/constants.ts) | Picks the spec (`sortAi`, `filterAi`, `findAi`, `someAi`, `mapAi`, `reduceAi`) by method name. The instruction is not parsed; it is passed to the LLM as text. |
 | TypeScript schema inference | [src/functions/inferSchema.ts](../src/functions/inferSchema.ts) | Uses the TypeScript checker to derive item fields, accumulator schema, and result shape. |
 | Cache lookup | [src/openai/generateAiFunction.ts](../src/openai/generateAiFunction.ts) | Key is a hash of instruction, schema, model, compiler version, and kind. A hit skips prompt, LLM, and cache write. |
 | Prompt construction | [src/openai/generateAiFunction.ts](../src/openai/generateAiFunction.ts) | Sends instruction, schema, parameter schemas, and the spec's rules. Array data is not sent. |

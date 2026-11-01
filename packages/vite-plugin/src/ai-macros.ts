@@ -68,6 +68,30 @@ declare global {
     findAi(instruction: string): T | undefined;
 
     /**
+     * Returns `true` when at least one element satisfies a natural-language
+     * instruction, otherwise `false`. Like the native `Array.prototype.some()`,
+     * it stops at the first match. The instruction must be a string literal so
+     * the Vite `aiCompiler` plugin can generate and validate a predicate during
+     * the build.
+     *
+     * @param instruction Describes the element that must exist.
+     * @returns `true` if any element matches, otherwise `false`.
+     *
+     * @example Simple: check for any out-of-stock product
+     * ```ts
+     * const hasOutOfStock = products.someAi('Match products that are out of stock.');
+     * ```
+     *
+     * @example Complex: check after filtering
+     * ```ts
+     * const hasCheapPro = products
+     *   .filterAi('Keep in-stock products.')
+     *   .someAi('Match products whose name contains "pro", ignoring case, and whose price is under 100.');
+     * ```
+     */
+    someAi(instruction: string): boolean;
+
+    /**
      * Transforms each element according to a natural-language instruction.
      * Specify `U` when the mapped elements have a different TypeScript type;
      * this type argument describes the result to TypeScript but does not

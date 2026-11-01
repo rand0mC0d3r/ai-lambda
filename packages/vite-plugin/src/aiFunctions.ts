@@ -1,7 +1,7 @@
 export interface AIFunctionSpec {
-  kind: 'sort' | 'filter' | 'find' | 'map' | 'reduce';
+  kind: 'sort' | 'filter' | 'find' | 'some' | 'map' | 'reduce';
   method: string;
-  replacementMethod: 'toSorted' | 'filter' | 'find' | 'map' | 'reduce';
+  replacementMethod: 'toSorted' | 'filter' | 'find' | 'some' | 'map' | 'reduce';
   outputField: string;
   schemaName: string;
   role: string;

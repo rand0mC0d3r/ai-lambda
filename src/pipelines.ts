@@ -200,6 +200,13 @@ export const pipelines: Pipeline[] = [
         .findAi('Find the first item whose category is Accessories.')
   },
   {
+    label: 'AI some gate, then AI filter',
+    run: () =>
+      cart.someAi('Match any item with a unit price above 100 dollars.')
+        ? cart.filterAi('Keep only items that are in stock.')
+        : []
+  },
+  {
     label: 'Unsorted',
     run: () => cart
   },

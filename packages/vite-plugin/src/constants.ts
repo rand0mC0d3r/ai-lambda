@@ -94,6 +94,25 @@ export const aiFunctionSpecs: Record<string, AIFunctionSpec> = {
       ...COMMON_RULES
     ]
   },
+  someAi: {
+    kind: 'some',
+    method: 'someAi',
+    replacementMethod: 'some',
+    outputField: 'predicate',
+    schemaName: 'some_predicate',
+    role: 'predicate',
+    signature: '(item) => ...',
+    parameters: ['item'],
+    allowedMethods: ['localeCompare', 'includes'],
+    rules: [
+      'Return true when the item satisfies the instruction.',
+      'Return false when the item does not satisfy the instruction.',
+      SCHEMA_FIELDS_RULE,
+      'Use comparison operators for numeric, boolean and date comparisons.',
+      'Use includes or localeCompare with sensitivity:"base" for case-insensitive string matching.',
+      ...COMMON_RULES
+    ]
+  },
   mapAi: {
     kind: 'map',
     method: 'mapAi',
