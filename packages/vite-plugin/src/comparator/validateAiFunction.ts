@@ -1,6 +1,29 @@
 import ts from 'typescript';
 import type { AIFunctionSpec } from '../aiFunctions.js';
 
+const permittedSyntaxKinds = new Set([
+  ts.SyntaxKind.ArrowFunction,
+  ts.SyntaxKind.Parameter,
+  ts.SyntaxKind.BinaryExpression,
+  ts.SyntaxKind.PropertyAccessExpression,
+  ts.SyntaxKind.CallExpression,
+  ts.SyntaxKind.Identifier,
+  ts.SyntaxKind.NumericLiteral,
+  ts.SyntaxKind.StringLiteral,
+  ts.SyntaxKind.TrueKeyword,
+  ts.SyntaxKind.FalseKeyword,
+  ts.SyntaxKind.NullKeyword,
+  ts.SyntaxKind.UndefinedKeyword,
+  ts.SyntaxKind.ObjectLiteralExpression,
+  ts.SyntaxKind.PropertyAssignment,
+  ts.SyntaxKind.ShorthandPropertyAssignment,
+  ts.SyntaxKind.SpreadAssignment,
+  ts.SyntaxKind.CommaToken,
+  ts.SyntaxKind.ParenthesizedExpression,
+  ts.SyntaxKind.PrefixUnaryExpression,
+  ts.SyntaxKind.ConditionalExpression,
+]);
+
 export function validateAiFunction(
   code: string,
   schema: Record<string, string>,
@@ -99,31 +122,8 @@ export function validateAiFunction(
       }
     }
 
-    const permitted = new Set([
-      ts.SyntaxKind.ArrowFunction,
-      ts.SyntaxKind.Parameter,
-      ts.SyntaxKind.BinaryExpression,
-      ts.SyntaxKind.PropertyAccessExpression,
-      ts.SyntaxKind.CallExpression,
-      ts.SyntaxKind.Identifier,
-      ts.SyntaxKind.NumericLiteral,
-      ts.SyntaxKind.StringLiteral,
-      ts.SyntaxKind.TrueKeyword,
-      ts.SyntaxKind.FalseKeyword,
-      ts.SyntaxKind.NullKeyword,
-      ts.SyntaxKind.UndefinedKeyword,
-      ts.SyntaxKind.ObjectLiteralExpression,
-      ts.SyntaxKind.PropertyAssignment,
-      ts.SyntaxKind.ShorthandPropertyAssignment,
-      ts.SyntaxKind.SpreadAssignment,
-      ts.SyntaxKind.CommaToken,
-      ts.SyntaxKind.ParenthesizedExpression,
-      ts.SyntaxKind.PrefixUnaryExpression,
-      ts.SyntaxKind.ConditionalExpression,
-    ]);
-
     if (
-      !permitted.has(node.kind) &&
+      !permittedSyntaxKinds.has(node.kind) &&
       !ts.isToken(node) &&
       !ts.isSourceFile(node) &&
       !ts.isVariableStatement(node) &&
