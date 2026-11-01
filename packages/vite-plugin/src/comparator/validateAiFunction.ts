@@ -1,7 +1,10 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import type { AIFunctionSpec } from '../aiFunctions.js';
+import type {
+  AIFunctionParameterSchema,
+  AIFunctionSpec
+} from '../aiFunctions.js';
 import type { Node } from 'typescript/unstable/ast';
 import {
   isArrowFunction,
@@ -37,9 +40,11 @@ const permittedSyntaxKinds = new Set([
   SyntaxKind.NullKeyword,
   SyntaxKind.UndefinedKeyword,
   SyntaxKind.ObjectLiteralExpression,
+  SyntaxKind.ArrayLiteralExpression,
   SyntaxKind.PropertyAssignment,
   SyntaxKind.ShorthandPropertyAssignment,
   SyntaxKind.SpreadAssignment,
+  SyntaxKind.SpreadElement,
   SyntaxKind.CommaToken,
   SyntaxKind.ParenthesizedExpression,
   SyntaxKind.PrefixUnaryExpression,
@@ -50,7 +55,8 @@ export async function validateAiFunction(
   code: string,
   schema: Record<string, string>,
   spec: AIFunctionSpec,
-  api: API
+  api: API,
+  parameterSchemas?: Record<string, AIFunctionParameterSchema>
 ): Promise<void> {
   const tempDir = await mkdtemp(path.join(tmpdir(), 'ai-lambda-'));
   const tempFile = path.join(tempDir, 'generated.ts');
@@ -102,6 +108,16 @@ export async function validateAiFunction(
       );
     }
 
+    const fieldsByParameter = Object.fromEntries(
+      spec.parameters.map((parameter) => [
+        parameter,
+        parameterSchemas
+          ? parameterSchemas[parameter]?.kind === 'object'
+            ? parameterSchemas[parameter].fields
+            : {}
+          : schema
+      ])
+    );
     const allowed = new Set([
       ...spec.parameters,
       ...(spec.globals ?? []),
@@ -109,10 +125,19 @@ export async function validateAiFunction(
       'numeric',
       'sensitivity',
       ...spec.allowedMethods,
-      ...Object.keys(schema)
+      ...Object.values(fieldsByParameter).flatMap((fields) =>
+        Object.keys(fields)
+      )
     ]);
 
     function inspect(node: Node): void {
+      if (
+        node.kind === SyntaxKind.ArrayLiteralExpression &&
+        spec.kind !== 'reduce'
+      ) {
+        throw new Error('Array literals are only permitted in reduceAi reducers');
+      }
+
       if (isPropertyAssignment(node)) {
         inspect(node.initializer);
         return;
@@ -126,8 +151,10 @@ export async function validateAiFunction(
         const property = node.name.text;
         const isField =
           isIdentifier(node.expression) &&
-          spec.parameters.includes(node.expression.text) &&
-          Object.hasOwn(schema, property);
+          Object.hasOwn(
+            fieldsByParameter[node.expression.text] ?? {},
+            property
+          );
         const isAllowedMethod = spec.allowedMethods.includes(property);
 
         if (!isField && !isAllowedMethod) {

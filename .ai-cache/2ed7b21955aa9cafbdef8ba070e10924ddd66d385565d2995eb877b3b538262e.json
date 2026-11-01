@@ -1,0 +1,3 @@
+{
+  "reducer": "(acc, item) => acc + item.quantity * item.unitPrice"
+}

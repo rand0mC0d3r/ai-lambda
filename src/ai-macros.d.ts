@@ -4,4 +4,5 @@ interface Array<T> {
   sortAi(instruction: string): T[];
   filterAi(instruction: string): T[];
   mapAi<U = T>(instruction: string): U[];
+  reduceAi<U>(instruction: string, initialValue: U): U;
 }

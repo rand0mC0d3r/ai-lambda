@@ -15,7 +15,10 @@ import {
   API,
   type Snapshot
 } from 'typescript/unstable/sync';
-import { inferSchema } from './comparator/inferSchema.js';
+import {
+  inferAccumulatorSchema,
+  inferSchema
+} from './comparator/inferSchema.js';
 import { aiFunctionSpecs } from './aiFunctions.js';
 import { generateAiFunction } from './openai/generateAiFunction.js';
 import type { AIConfig } from './types.js';
@@ -152,12 +155,15 @@ export function aiCompiler(): Plugin {
             const spec = aiFunctionSpecs[node.expression.name.text];
             const instructionNode = node.arguments[0];
             const items = node.expression.expression;
+            const initialValue = node.arguments[1];
 
             if (
               !instructionNode ||
               !isStringLiteral(instructionNode) ||
-              node.arguments.length !== 1 ||
-              (node.typeArguments && spec.kind !== 'map')
+              node.arguments.length !== (spec.kind === 'reduce' ? 2 : 1) ||
+              (node.typeArguments &&
+                spec.kind !== 'map' &&
+                spec.kind !== 'reduce')
             ) {
               throw new Error(
                 `Invalid ${spec.method}() invocation in ${id}`
@@ -170,24 +176,44 @@ export function aiCompiler(): Plugin {
               spec.method
             );
 
+            const accumulator = spec.kind === 'reduce' && initialValue
+              ? inferAccumulatorSchema(
+                activeProject.checker,
+                initialValue,
+                spec.method,
+                node.typeArguments?.[0]
+              )
+              : undefined;
+            const parameterSchemas = accumulator
+              ? {
+                acc: accumulator,
+                item: { kind: 'object' as const, fields: schema }
+              }
+              : undefined;
             const generated = await generateAiFunction(
               config,
               root,
               spec,
               instructionNode.text,
               schema,
-              compilerApi
+              compilerApi,
+              parameterSchemas
             );
 
-            const typeArguments = node.typeArguments
+            const typeArguments =
+              (spec.kind === 'map' || spec.kind === 'reduce') &&
+              node.typeArguments
               ? `<${node.typeArguments.map((type) => type.getText(programSource)).join(', ')}>`
+              : '';
+            const reducerArguments = spec.kind === 'reduce'
+              ? `, ${initialValue?.getText(programSource)}`
               : '';
 
             // Rewrite only the method tail so nested receiver calls stay intact.
             replacements.push({
               start: items.end,
               end: node.end,
-              value: `.${spec.replacementMethod}${typeArguments}(${generated})`
+              value: `.${spec.replacementMethod}${typeArguments}(${generated}${reducerArguments})`
             });
 
             await visit(items);

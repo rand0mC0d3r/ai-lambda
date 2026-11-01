@@ -8,6 +8,40 @@ export interface Pipeline {
 // Instruction strings must be string literals: the compiler reads them at build time.
 export const pipelines: Pipeline[] = [
   {
+    label: 'Native filter, AI reduce, native map, AI sort',
+    run: () =>
+      cart
+        .filter((item) => item.category === 'Peripherals')
+        .reduceAi<CartItem[]>(
+          'Return a new array containing only items that are in stock and have a unitPrice above 50 dollars. Append each matching item to acc; otherwise return acc unchanged.',
+          []
+        )
+        .map((item) => ({
+          ...item,
+          unitPrice: Math.round(item.unitPrice * 90) / 100
+        }))
+        .filter((item) => item.quantity * item.unitPrice >= 50)
+        .sortAi(
+          'Sort by total line price (quantity multiplied by unit price), highest first. When prices are equal, sort product names in natural alphabetical order.'
+        )
+  },
+  {
+    label: 'AI filter, native map, AI reduce, native filter',
+    run: () =>
+      cart
+        .filterAi('Keep only items that are in stock.')
+        .map((item) => ({
+          ...item,
+          unitPrice: Math.round(item.unitPrice * 90) / 100
+        }))
+        .reduceAi<CartItem[]>(
+          'Return a new array containing items whose quantity multiplied by unitPrice is at least 100 dollars. Append each matching item to acc; otherwise return acc unchanged.',
+          []
+        )
+        .filter((item) => item.category !== 'Accessories')
+        .toReversed()
+  },
+  {
     label: 'Accessories, then sort',
     run: () =>
       cart

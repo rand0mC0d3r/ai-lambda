@@ -2,8 +2,8 @@
 
 A Vite plugin that turns natural-language instructions on array operations
 into JavaScript functions during Vite transforms. It supports `sortAi`,
-`filterAi`, and `mapAi`; the generated functions are inserted into the
-application bundle, so the browser does not call an AI service at runtime.
+`filterAi`, `mapAi`, and `reduceAi`; the generated functions are inserted into
+the application bundle, so the browser does not call an AI service at runtime.
 
 ## Requirements
 
@@ -67,14 +67,15 @@ interface Array<T> {
   sortAi(instruction: string): T[];
   filterAi(instruction: string): T[];
   mapAi<U = T>(instruction: string): U[];
+  reduceAi<U>(instruction: string, initialValue: U): U;
 }
 ```
 
 ## Use the operations
 
-Each method takes exactly one string-literal instruction. The array expression
-is the receiver, so calls can be chained with native methods and with the
-other AI methods.
+Each method takes a string-literal instruction. `reduceAi` also takes an
+initial value. The array expression is the receiver, so calls can be chained
+with native methods and with the other AI methods.
 
 ### Sorting
 
@@ -142,6 +143,52 @@ The generic type on `mapAi` expresses the desired result type to TypeScript. The
 plugin validates the generated function against the input schema, but does not
 prove that its returned object satisfies that generic result type.
 
+### Reducing
+
+`reduceAi` generates a reducer and replaces the call with native `reduce`. The
+initial value determines the accumulator and return type. The reducer receives
+the current accumulator as `acc` and the current array item as `item`.
+
+```ts
+const total = products.reduceAi(
+  'Add each item price multiplied by its quantity to the running total.',
+  0
+);
+
+const availableTotal = products
+  .filterAi('Keep only items that are in stock.')
+  .reduceAi(
+    'Add the price of each item to the running total.',
+    0
+  );
+```
+
+The initial value may be a supported scalar or an object with supported scalar
+fields. For object accumulators, the generated reducer should return a new
+object and spread `acc` to retain unchanged fields.
+
+An array initial value lets the reduced result continue through native array
+methods. Give an empty array an explicit generic type so the accumulator item
+schema can be inferred:
+
+```ts
+const selected = products
+  .filter((product) => product.inStock)
+  .reduceAi<Product[]>(
+    'Keep products with a price above 50; return a new array with each match appended.',
+    []
+  )
+  .map((product) => ({
+    ...product,
+    price: Math.round(product.price * 90) / 100
+  }))
+  .filter((product) => product.price > 50);
+```
+
+Array accumulators may contain supported scalar values or objects with
+supported scalar fields. Reducers must return new arrays rather than mutating
+the accumulator.
+
 ## Input schema and generated functions
 
 The plugin uses the TypeScript checker to infer the item fields from the
@@ -160,15 +207,16 @@ produce an error. Nested object fields and fields with other unsupported types
 are not currently supported.
 
 Generated functions must be expression-bodied arrow functions with the
-expected parameter names: `(a, b)` for sorting and `(item)` for filtering and
-mapping. They can refer to fields in the inferred schema and use a restricted
-set of operations:
+expected parameter names: `(a, b)` for sorting, `(item)` for filtering and
+mapping, and `(acc, item)` for reducing. They can refer to fields in the
+inferred schema and use a restricted set of operations:
 
 | Operation | Available helpers |
 |---|---|
 | `sortAi` | `localeCompare` |
 | `filterAi` | `localeCompare`, `includes` |
 | `mapAi` | `localeCompare`, `includes`, `Math.round`, `Math.floor`, `Math.ceil` |
+| `reduceAi` | `localeCompare`, `includes`, `Math.round`, `Math.floor`, `Math.ceil` |
 
 The validator rejects unsupported syntax, unknown identifiers, fields that
 are not in the inferred schema, and calls outside the operation's allowed
@@ -186,15 +234,15 @@ running in the browser.
 
 For each recognized call, the plugin:
 
-1. Checks that the instruction is a string literal and that the call has one
-   argument.
+1. Checks that the instruction is a string literal and that the call has the
+   expected arguments.
 2. Uses the project's TypeScript configuration to infer the receiver's item
    schema.
 3. Reads a cached generated function, or sends the instruction and inferred
    schema to OpenAI on a cache miss.
 4. Validates the returned function and stores it in the configured cache
    directory when caching is enabled.
-5. Rewrites the AI method to `toSorted`, `filter`, or `map`.
+5. Rewrites the AI method to `toSorted`, `filter`, `map`, or `reduce`.
 
 The array's runtime contents are **not** sent to OpenAI. Requests contain the
 instruction and inferred field schema. Generated functions are cached by
@@ -213,7 +261,7 @@ Because `sortAi` compiles to `toSorted`, the runtime must support
 | TypeScript configuration error | Ensure the same project root contains a valid `tsconfig.json`. The plugin uses it to infer the receiver type. |
 | `items must be an array` | Check that the expression before the AI method has an array type in the project's TypeScript program. |
 | Unsupported field type | Use fields typed as `string`, `number`, `boolean`, or `Date`; avoid mixed unions and nested structures. |
-| Invalid invocation | Pass exactly one string literal. Only `mapAi` accepts a generic type argument. |
+| Invalid invocation | Pass one string literal; `reduceAi` also needs an initial value. `mapAi` and `reduceAi` accept a generic type argument. |
 | Generation or OpenAI response error | Check network access, API key validity, and the instruction. A generation failure stops the transform rather than leaving an uncompiled AI call in the output. |
 | `sortAi` is missing at runtime | Confirm the Vite plugin is registered and that the call is in a transformed JS/TS module; also check runtime support for `toSorted`. |
 

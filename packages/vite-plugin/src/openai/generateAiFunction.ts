@@ -1,11 +1,16 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import type { API } from 'typescript/unstable/sync';
 import path from 'node:path';
-import type { AIFunctionSpec } from '../aiFunctions.js';
+import type {
+  AIFunctionParameterSchema,
+  AIFunctionSpec
+} from '../aiFunctions.js';
 import { validateAiFunction } from '../comparator/validateAiFunction.js';
 import type { AIConfig } from '../types.js';
 import { hash, isRecord } from '../utils.js';
 import { extractGeneratedText } from './extractGeneratedText.js';
+
+type ParameterSchemas = Record<string, AIFunctionParameterSchema>;
 
 export async function generateAiFunction(
   config: AIConfig,
@@ -13,13 +18,15 @@ export async function generateAiFunction(
   spec: AIFunctionSpec,
   instruction: string,
   schema: Record<string, string>,
-  api: API
+  api: API,
+  parameterSchemas?: ParameterSchemas
 ): Promise<string> {
   const cacheKey = hash(JSON.stringify({
     instruction,
     schema,
     model: config.model,
     compilerVersion: 1,
+    ...(parameterSchemas ? { parameterSchemas } : {}),
     // Sort keys stay unchanged so comparators cached before filterAi existed remain valid.
     ...(spec.kind === 'sort' ? {} : { kind: spec.kind })
   }));
@@ -49,7 +56,13 @@ export async function generateAiFunction(
         throw new Error(`Invalid cached ${spec.role}`);
       }
 
-      await validateAiFunction(cachedFunction, schema, spec, api);
+      await validateAiFunction(
+        cachedFunction,
+        schema,
+        spec,
+        api,
+        parameterSchemas
+      );
       return cachedFunction;
     }
   }
@@ -79,6 +92,7 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
         input: JSON.stringify({
           instruction,
           schema,
+          ...(parameterSchemas ? { parameterSchemas } : {}),
           availableVariables: spec.parameters
         }),
         text: {
@@ -130,7 +144,13 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
     );
   }
 
-  await validateAiFunction(generated, schema, spec, api);
+  await validateAiFunction(
+    generated,
+    schema,
+    spec,
+    api,
+    parameterSchemas
+  );
 
   if (config.cache) {
     await mkdir(cacheDir, { recursive: true });

@@ -1,7 +1,7 @@
 export interface AIFunctionSpec {
-  kind: 'sort' | 'filter' | 'map';
+  kind: 'sort' | 'filter' | 'map' | 'reduce';
   method: string;
-  replacementMethod: 'toSorted' | 'filter' | 'map';
+  replacementMethod: 'toSorted' | 'filter' | 'map' | 'reduce';
   outputField: string;
   schemaName: string;
   role: string;
@@ -11,6 +11,21 @@ export interface AIFunctionSpec {
   allowedMethods: readonly string[];
   rules: readonly string[];
 }
+
+export type AIFunctionParameterSchema =
+  | {
+    kind: 'scalar';
+    type: string;
+  }
+  | {
+    kind: 'object';
+    fields: Record<string, string>;
+  }
+  | {
+    kind: 'array';
+    elementType: string;
+    elementFields?: Record<string, string>;
+  };
 
 export const aiFunctionSpecs: Record<string, AIFunctionSpec> = {
   sortAi: {
@@ -71,6 +86,30 @@ export const aiFunctionSpecs: Record<string, AIFunctionSpec> = {
       'Return the transformed item as an object literal.',
       'Use the spread operator to keep unchanged fields, for example ({...item, unitPrice: value}).',
       'Only access fields defined in the supplied schema.',
+      'Use arithmetic for numeric changes and Math.round, Math.floor or Math.ceil for rounding.',
+      'Use includes or localeCompare for string checks.',
+      'No external dependencies.',
+      'No mutations.',
+      'No additional variables or statements.'
+    ]
+  },
+  reduceAi: {
+    kind: 'reduce',
+    method: 'reduceAi',
+    replacementMethod: 'reduce',
+    outputField: 'reducer',
+    schemaName: 'reduce_reducer',
+    role: 'reducer',
+    signature: '(acc, item) => ...',
+    parameters: ['acc', 'item'],
+    globals: ['Math'],
+    allowedMethods: ['localeCompare', 'includes', 'round', 'floor', 'ceil'],
+    rules: [
+      'Return the updated accumulator for the current item.',
+      'Use acc as the current accumulator and item as the current array item.',
+      'Only access fields defined in the supplied item or accumulator schemas.',
+      'For object accumulators, return a new object and spread acc to keep unchanged fields.',
+      'For array accumulators, return a new array such as [...acc, item]; do not mutate acc.',
       'Use arithmetic for numeric changes and Math.round, Math.floor or Math.ceil for rounding.',
       'Use includes or localeCompare for string checks.',
       'No external dependencies.',

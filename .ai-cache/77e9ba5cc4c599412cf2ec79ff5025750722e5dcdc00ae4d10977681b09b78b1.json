@@ -1,0 +1,3 @@
+{
+  "reducer": "(acc, item) => item.quantity * item.unitPrice >= 100 ? [...acc, item] : acc"
+}

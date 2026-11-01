@@ -1,0 +1,3 @@
+{
+  "reducer": "(acc,item)=>item.category===\"Accessories\"?{...acc,accessories:acc.accessories+item.quantity*item.unitPrice}:item.category===\"Displays\"?{...acc,displays:acc.displays+item.quantity*item.unitPrice}:item.category===\"Peripherals\"?{...acc,peripherals:acc.peripherals+item.quantity*item.unitPrice}:acc"
+}
