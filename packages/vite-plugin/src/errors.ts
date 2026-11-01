@@ -1,3 +1,6 @@
+/**
+ * Machine-readable categories for errors raised by the plugin.
+ */
 export type AIErrorCode =
   | 'invalid_config'
   | 'missing_api_key'
@@ -9,10 +12,21 @@ export type AIErrorCode =
   | 'openai_network'
   | 'openai_response';
 
+/**
+ * Error thrown by the plugin, tagged with an {@link AIErrorCode} so callers can
+ * choose a matching troubleshooting hint.
+ */
 export class AIPluginError extends Error {
+  /** Category of the failure. */
   readonly code: AIErrorCode;
+  /** HTTP status code for OpenAI HTTP failures. */
   readonly status?: number;
 
+  /**
+   * @param message Human-readable description of the failure.
+   * @param code Category of the failure.
+   * @param options Optional underlying `cause` and HTTP `status`.
+   */
   constructor(
     message: string,
     code: AIErrorCode,

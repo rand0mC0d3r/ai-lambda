@@ -12,6 +12,12 @@ import type {
 import { AIPluginError } from '../errors.js';
 import { translate } from '../translations/en.js';
 
+/**
+ * Maps a TypeScript type to the simple type name used in generated code.
+ *
+ * @param type The type to map.
+ * @returns `string`, `number`, `boolean`, `date`, or `undefined` when unsupported.
+ */
 function getSimpleType(type: Type): string | undefined {
   if (type.flags & TypeFlags.StringLike) return 'string';
   if (type.flags & TypeFlags.NumberLike) return 'number';
@@ -22,12 +28,29 @@ function getSimpleType(type: Type): string | undefined {
   return undefined;
 }
 
+/**
+ * Returns the value type of a numeric index signature, such as the element type of an array.
+ *
+ * @param checker The TypeScript type checker.
+ * @param type The type to inspect.
+ * @returns The value type, or `undefined` when the type has no numeric index.
+ */
 function getNumberIndexValueType(checker: Checker, type: Type): Type | undefined {
   return checker.getIndexInfosOfType(type).find(
     (index) => index.keyType.flags & TypeFlags.NumberLike
   )?.valueType;
 }
 
+/**
+ * Maps each property of an object type to its simple type name.
+ *
+ * @param checker The TypeScript type checker.
+ * @param type The object type whose properties are inspected.
+ * @param location The expression used to resolve property types.
+ * @param method The source method name, used in error messages.
+ * @returns A map from property name to simple type.
+ * @throws {AIPluginError} With code `unsupported_type` when a property has an unsupported type.
+ */
 function inferFields(
   checker: Checker,
   type: Type,
@@ -64,6 +87,15 @@ function inferFields(
   return schema;
 }
 
+/**
+ * Returns the item type of the array passed to an AI method.
+ *
+ * @param checker The TypeScript type checker.
+ * @param items The array expression.
+ * @param method The source method name, used in error messages.
+ * @returns The element type.
+ * @throws {AIPluginError} With code `unsupported_type` when the expression is not an array.
+ */
 function getItemType(
   checker: Checker,
   items: Expression,
@@ -79,6 +111,14 @@ function getItemType(
   return itemType;
 }
 
+/**
+ * Infers the field schema of the array elements for an AI method.
+ *
+ * @param checker The TypeScript type checker.
+ * @param items The array expression.
+ * @param method The source method name.
+ * @returns A map from field name to simple type.
+ */
 export function inferSchema(
   checker: Checker,
   items: Expression,
@@ -92,7 +132,17 @@ export function inferSchema(
   );
 }
 
-// Returns undefined for scalar and array results, which are not shape-checked.
+/**
+ * Infers the shape of the result of a `mapAi` or `reduceAi` call.
+ * The shape is used to check that generated code returns every declared field.
+ *
+ * @param checker The TypeScript type checker.
+ * @param items The array expression.
+ * @param method The source method name.
+ * @param initialValue The `reduceAi` initial value, if any.
+ * @param explicitType The explicit type argument, if any.
+ * @returns The result shape, or `undefined` for scalar and array results, which are not shape-checked.
+ */
 export function inferResultShape(
   checker: Checker,
   items: Expression,
@@ -127,6 +177,16 @@ export function inferResultShape(
   };
 }
 
+/**
+ * Infers the type of a `reduceAi` accumulator from its initial value.
+ *
+ * @param checker The TypeScript type checker.
+ * @param initialValue The initial value expression.
+ * @param method The source method name, used in error messages.
+ * @param explicitType The explicit type argument, if any.
+ * @returns A scalar, array, or object parameter schema.
+ * @throws {AIPluginError} With code `unsupported_type` when the type cannot be described.
+ */
 export function inferAccumulatorSchema(
   checker: Checker,
   initialValue: Expression,

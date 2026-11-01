@@ -1,12 +1,22 @@
 import { isRecord } from '../utils.js';
 
+/**
+ * Token counts reported by one OpenAI response.
+ */
 export interface TokenUsage {
+  /** Total input tokens, including cached tokens. */
   inputTokens: number;
+  /** Input tokens served from the prompt cache. */
   cachedInputTokens: number;
+  /** Output tokens, including reasoning tokens. */
   outputTokens: number;
+  /** Output tokens spent on internal reasoning. */
   reasoningTokens: number;
 }
 
+/**
+ * Prices in USD per one million tokens.
+ */
 interface ModelPricing {
   inputPerMillion: number;
   cachedInputPerMillion: number;
@@ -28,10 +38,22 @@ const MODEL_PRICING: Record<string, ModelPricing> = {
   'gpt-5.4-nano': { inputPerMillion: 0.2, cachedInputPerMillion: 0.02, outputPerMillion: 1.25 }
 };
 
+/**
+ * Converts an unknown value to a count, treating anything that is not a finite number as zero.
+ *
+ * @param value The raw value from the response.
+ * @returns The number, or `0`.
+ */
 function toCount(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
+/**
+ * Reads token usage from an OpenAI Responses API payload.
+ *
+ * @param body The parsed response body.
+ * @returns The token counts, or `undefined` when the body has no `usage` object.
+ */
 export function readUsage(body: unknown): TokenUsage | undefined {
   if (!isRecord(body) || !isRecord(body.usage)) return undefined;
 
@@ -51,7 +73,14 @@ export function readUsage(body: unknown): TokenUsage | undefined {
   };
 }
 
-// Dated snapshots such as "gpt-4.1-mini-2025-04-14" share their base model's price.
+/**
+ * Estimates the USD cost of a request from its token usage and the model's pricing.
+ * Dated snapshots such as `gpt-4.1-mini-2025-04-14` share their base model's price.
+ *
+ * @param model The model name used for the request.
+ * @param usage The token counts for the request.
+ * @returns The estimated cost in USD, or `undefined` when the model has no pricing entry.
+ */
 export function estimateCostUsd(model: string, usage: TokenUsage): number | undefined {
   const baseModel = model.replace(/-\d{4}-\d{2}-\d{2}$/, '');
   if (!Object.hasOwn(MODEL_PRICING, baseModel)) return undefined;

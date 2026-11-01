@@ -10,8 +10,19 @@ import { translate } from './translations/en.js';
 import type { AIConfig } from './types.js';
 import { isRecord } from './utils.js';
 
+/**
+ * Top-level keys allowed in `.ai-rc.json`.
+ */
 const SUPPORTED_KEYS = ['apiKey', 'model', 'cache', 'generatedDir'];
 
+/**
+ * Reads and validates `.ai-rc.json`.
+ *
+ * @param configPath Absolute path to the config file.
+ * @param root The resolved Vite root, used to validate `generatedDir`.
+ * @returns The validated config with defaults applied.
+ * @throws {AIPluginError} With code `invalid_config` or `missing_api_key` when the file is invalid.
+ */
 export async function readAiConfig(
   configPath: string,
   root: string
@@ -35,6 +46,15 @@ export async function readAiConfig(
   return validateAiConfig(raw, root);
 }
 
+/**
+ * Validates parsed `.ai-rc.json` contents and applies defaults.
+ *
+ * @param raw The parsed JSON value.
+ * @param root The resolved Vite root, used to validate `generatedDir`.
+ * @returns The validated config.
+ * @throws {AIPluginError} When the value is not an object, contains unknown keys,
+ * or has an invalid or missing `apiKey`, `model`, `cache`, or `generatedDir`.
+ */
 export function validateAiConfig(raw: unknown, root: string): AIConfig {
   if (!isRecord(raw)) {
     throw new AIPluginError(translate('aiConfigNotObject', { configFile: AI_CONFIG_FILE }), 'invalid_config');
@@ -85,10 +105,23 @@ export function validateAiConfig(raw: unknown, root: string): AIConfig {
   };
 }
 
+/**
+ * Checks whether a value is a string with non-whitespace content.
+ *
+ * @param value The value to check.
+ * @returns `true` for a non-blank string.
+ */
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';
 }
 
+/**
+ * Checks that `generatedDir` is a relative path that stays inside the Vite root.
+ *
+ * @param value The configured directory.
+ * @param root The resolved Vite root.
+ * @returns `true` when the path is valid.
+ */
 function isCacheDirInsideRoot(value: unknown, root: string): value is string {
   if (!isNonEmptyString(value) || path.isAbsolute(value)) {
     return false;

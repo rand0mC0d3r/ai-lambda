@@ -2,6 +2,14 @@ import { AIPluginError } from '../errors.js';
 import { isRecord } from '../utils.js';
 import { translate } from '../translations/en.js';
 
+/**
+ * Extracts the generated JSON text from an OpenAI Responses API payload.
+ *
+ * @param result The parsed response body.
+ * @returns The concatenated output text.
+ * @throws {AIPluginError} With code `openai_response` when the response is malformed,
+ * contains a refusal, or has no text.
+ */
 export function extractGeneratedText(result: unknown): string {
   if (!isRecord(result)) {
     throw new AIPluginError(translate('invalidOpenAiResponse'), 'openai_response');

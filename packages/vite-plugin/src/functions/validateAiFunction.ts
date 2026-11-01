@@ -47,6 +47,7 @@ import {
 } from 'typescript/unstable/sync';
 import { SyntaxKind } from 'typescript/unstable/ast';
 
+/** Declares a parameter's kind and the field types that generated code may use. */
 interface ParameterInfo {
   kind: AIFunctionParameterSchema['kind'];
   fields: Record<string, string>;
@@ -54,6 +55,17 @@ interface ParameterInfo {
   scalarType?: string;
 }
 
+/**
+ * Checks that generated code is a valid, allowed arrow function for the given call.
+ *
+ * @param code The generated source text.
+ * @param schema Field names and types of the array element or argument.
+ * @param spec Spec for the AI method.
+ * @param api TypeScript API used to type-check the code.
+ * @param parameterSchemas Schemas for extra parameters, when present.
+ * @param resultShape Expected result shape, when present.
+ * @throws {AIPluginError} With code `invalid_generated` when the code fails validation.
+ */
 export async function validateAiFunction(
   code: string,
   schema: Record<string, string>,
@@ -75,6 +87,13 @@ export async function validateAiFunction(
   }
 }
 
+/**
+ * Returns the field types that the generated code's parameter may access.
+ *
+ * @param parameterSchema Schema for this parameter, or `undefined` for the default element.
+ * @param schema Field types of the default element.
+ * @returns A map from field name to type. Scalars have no fields.
+ */
 function parameterTypes(
   parameterSchema: AIFunctionParameterSchema | undefined,
   schema: Record<string, string>
@@ -91,6 +110,18 @@ function parameterTypes(
   }
 }
 
+/**
+ * Parses the generated code in a temporary module, type-checks it, and runs the AST
+ * checks. The temporary directory is removed when the check finishes.
+ *
+ * @param code The generated source text.
+ * @param schema Field names and types of the array element or argument.
+ * @param spec Spec for the AI method.
+ * @param api TypeScript API used to create the snapshot.
+ * @param parameterSchemas Schemas for extra parameters, when present.
+ * @param resultShape Expected result shape, when present.
+ * @throws {AIPluginError} With code `invalid_generated` when the code fails a check.
+ */
 async function checkGeneratedFunction(
   code: string,
   schema: Record<string, string>,

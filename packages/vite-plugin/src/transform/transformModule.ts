@@ -23,16 +23,31 @@ import { generateAiFunction } from '../openai/generateAiFunction.js';
 import { translate } from '../translations/en.js';
 import type { AIConfig } from '../types.js';
 
+/**
+ * A call expression whose callee is a property access, such as `items.sortAi(...)`.
+ */
 type AiCall = CallExpression & {
   expression: PropertyAccessExpression;
 };
 
+/**
+ * A text replacement, with offsets into the original source.
+ */
 type Edit = {
+  /** Start offset of the replaced range. */
   start: number;
+  /** End offset of the replaced range, exclusive. */
   end: number;
+  /** Replacement text. */
   value: string;
 };
 
+/**
+ * Returns `true` when an AI call expression targets one of the supported array methods.
+ *
+ * @param node The AST node to check.
+ * @returns Whether the node is an AI call that should be compiled.
+ */
 function isAiCall(node: Node): node is AiCall {
   return (
     isCallExpression(node) &&
@@ -41,6 +56,20 @@ function isAiCall(node: Node): node is AiCall {
   );
 }
 
+/**
+ * Finds every supported AI array call in a module, generates or loads its
+ * function, and rewrites each call to the matching native array method.
+ *
+ * @param source The module source; must match the TypeScript project's copy of the file.
+ * @param id The module's file path.
+ * @param getApi Returns the TypeScript API.
+ * @param tsconfigPath Path to the project's `tsconfig.json`.
+ * @param config The validated plugin config.
+ * @param root The resolved Vite root.
+ * @param logger Vite's logger.
+ * @returns The rewritten code and source map, or `null` when the module has no AI calls.
+ * @throws {AIPluginError} When a call is invalid or the module is not in the TypeScript project.
+ */
 export async function transformModule(
   source: string,
   id: string,
@@ -76,6 +105,16 @@ export async function transformModule(
 
     const pending: (() => Promise<Edit[]>)[] = [];
 
+    /**
+     * Wraps an error with the source location and call details so the message points
+     * at the AI call that failed.
+     *
+     * @param error The original error.
+     * @param node The AI call node that failed.
+     * @param spec Spec for the AI method.
+     * @param instruction The instruction text, or `undefined` if it is not a string literal.
+     * @returns A transform error with location context.
+     */
     function wrapError(error: unknown, node: AiCall, spec: (typeof aiFunctionSpecs)[string], instruction: string | undefined): Error {
       const location = activeSource.getLineAndCharacterOfPosition(
         node.getStart(activeSource)
@@ -90,8 +129,12 @@ export async function transformModule(
       });
     }
 
-    // Collects every AI call synchronously (including calls nested in receivers
-    // and initial values) so generation can run concurrently afterwards.
+    /**
+     * Validates one AI call and queues its generation work. Nested calls are visited too.
+     * The AST is not modified here. Edits are applied after all generation finishes.
+     *
+     * @param node The node to inspect.
+     */
     function visit(node: Node): void {
       if (isAiCall(node)) {
         const spec = aiFunctionSpecs[node.expression.name.text];

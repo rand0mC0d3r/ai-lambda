@@ -30,16 +30,31 @@ import {
 } from '../reporting/aiCallReport.js';
 import { translate } from '../translations/en.js';
 
+/** Maps each generated-function parameter name to its schema. */
 type ParameterSchemas = Record<string, AIFunctionParameterSchema>;
 
+/**
+ * Per-call bookkeeping collected while a request runs, reported in the build summary.
+ */
 interface CallTrace {
+  /** Number of HTTP attempts made. Stays 0 when the result comes from cache. */
   attempts: number;
+  /** Whether the result was read from the cache file. */
   cached: boolean;
+  /** Token usage reported by OpenAI, when available. */
   usage?: TokenUsage;
 }
 
+/** HTTP status codes that trigger a retry. */
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 
+/**
+ * Reads a cache file as UTF-8 text.
+ *
+ * @param cacheFile Absolute path to the cache file.
+ * @returns The file contents, or `undefined` if the file does not exist.
+ * @throws Any read error other than a missing file.
+ */
 async function readCache(cacheFile: string): Promise<string | undefined> {
   try {
     return await readFile(cacheFile, 'utf8');
@@ -49,6 +64,13 @@ async function readCache(cacheFile: string): Promise<string | undefined> {
   }
 }
 
+/**
+ * Returns the generated code stored under the spec's output field.
+ *
+ * @param parsed The parsed cache or API payload.
+ * @param spec The spec whose `outputField` names the code.
+ * @returns The code string, or `undefined` if the field is missing or not a string.
+ */
 function getGeneratedFunction(
   parsed: unknown,
   spec: AIFunctionSpec
@@ -57,6 +79,14 @@ function getGeneratedFunction(
   return typeof value === 'string' ? value : undefined;
 }
 
+/**
+ * Parses cached JSON. A corrupt file logs a warning and is treated as a cache miss.
+ *
+ * @param cached The raw file contents.
+ * @param cacheFile The cache file path, used in the warning.
+ * @param logger Logger for the warning.
+ * @returns The parsed value, or `undefined` if parsing fails.
+ */
 function parseCachedJson(
   cached: string,
   cacheFile: string,
@@ -70,10 +100,24 @@ function parseCachedJson(
   }
 }
 
+/**
+ * Resolves after the given delay.
+ *
+ * @param ms Delay in milliseconds.
+ */
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Computes how long to wait before retrying. Uses the `Retry-After` header when it is a
+ * valid number of seconds, capped at {@link OPENAI_MAX_RETRY_AFTER_MS}. Otherwise falls back
+ * to exponential backoff.
+ *
+ * @param response The failed response.
+ * @param attempt Zero-based index of the attempt that failed.
+ * @returns The delay in milliseconds.
+ */
 function getRetryDelayMs(response: Response, attempt: number): number {
   const retryAfter = response.headers.get('retry-after');
   const seconds = retryAfter === null ? Number.NaN : Number(retryAfter);
@@ -85,10 +129,26 @@ function getRetryDelayMs(response: Response, attempt: number): number {
   return OPENAI_RETRY_BASE_DELAY_MS * 2 ** attempt;
 }
 
+/**
+ * Turns an unknown thrown value into a message string.
+ *
+ * @param error The thrown value.
+ * @returns The error message, or `String(error)` for non-`Error` values.
+ */
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * POSTs to OpenAI with a per-request timeout. Retries network errors and retryable HTTP
+ * statuses (see {@link RETRYABLE_STATUSES}) up to {@link OPENAI_MAX_RETRIES} times.
+ *
+ * @param url The request URL.
+ * @param init Fetch options, excluding the timeout signal.
+ * @param logger Logger for retry warnings.
+ * @returns The final response and the number of attempts made.
+ * @throws {AIPluginError} With code `openai_network` when every attempt fails with a network error.
+ */
 async function fetchWithRetry(
   url: string,
   init: RequestInit,
@@ -141,8 +201,24 @@ async function fetchWithRetry(
   }
 }
 
+/** Requests that are in progress, keyed by cache file, so identical calls share one request. */
 const inFlight = new Map<string, Promise<string>>();
 
+/**
+ * Returns generated code for one AI call. Reads the cache first when enabled, otherwise
+ * asks OpenAI. Concurrent calls for the same cache file share one promise.
+ *
+ * @param config Resolved plugin configuration.
+ * @param root Vite root, used to resolve `generatedDir`.
+ * @param spec Spec for the AI method being generated.
+ * @param instruction The natural-language instruction from the source.
+ * @param schema Field names and types of the array element or argument.
+ * @param api TypeScript API used to validate the result.
+ * @param parameterSchemas Schemas for extra parameters, when present.
+ * @param resultShape Expected result shape, when the call reads a nested result.
+ * @param logger Logger for progress and summary output.
+ * @returns The generated JavaScript arrow function as source text.
+ */
 export function generateAiFunction(
   config: AIConfig,
   root: string,
@@ -222,6 +298,12 @@ export function generateAiFunction(
   return generation;
 }
 
+/**
+ * Records a finished call in the build report and logs its summary line.
+ *
+ * @param logger Logger for the summary line.
+ * @param call Details of the finished call.
+ */
 function completeCall(
   logger: Logger,
   call: {
@@ -251,6 +333,19 @@ function completeCall(
   logger.info(`   ${formatCallLine(record)}`);
 }
 
+/**
+ * Reads and validates a cached function. A corrupt, incomplete, or stale entry returns
+ * `undefined` so the caller regenerates it.
+ *
+ * @param cacheFile Path to the cache file.
+ * @param spec Spec for the AI method.
+ * @param schema Field names and types of the array element or argument.
+ * @param api TypeScript API used to validate the cached code.
+ * @param parameterSchemas Schemas for extra parameters, when present.
+ * @param resultShape Expected result shape, when present.
+ * @param logger Logger for warnings.
+ * @returns The cached code, or `undefined` if there is no usable entry.
+ */
 async function readCachedFunction(
   cacheFile: string,
   spec: AIFunctionSpec,
@@ -297,6 +392,23 @@ async function readCachedFunction(
   return cachedFunction;
 }
 
+/**
+ * Produces generated code by reading the cache or calling OpenAI, then writes the result
+ * to the cache. The caller is responsible for validation of new results.
+ *
+ * @param config Resolved plugin configuration.
+ * @param cacheDir Directory that holds cache files.
+ * @param cacheFile Path to this call's cache file.
+ * @param spec Spec for the AI method.
+ * @param instruction The natural-language instruction from the source.
+ * @param schema Field names and types of the array element or argument.
+ * @param api TypeScript API used to validate the result.
+ * @param parameterSchemas Schemas for extra parameters, when present.
+ * @param resultShape Expected result shape, when present.
+ * @param trace Mutable record updated with attempts, cache status, and usage.
+ * @param logger Logger for progress output.
+ * @returns The generated JavaScript arrow function as source text.
+ */
 async function compileAiFunction(
   config: AIConfig,
   cacheDir: string,

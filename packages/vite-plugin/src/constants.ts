@@ -1,21 +1,36 @@
 import { SyntaxKind } from 'typescript/unstable/ast';
 import type { AIFunctionSpec } from './aiFunctions.js';
 
+/** Model used when `.ai-rc.json` does not set `model`. */
 export const DEFAULT_MODEL = 'gpt-4.1-mini';
+/** Cache directory used when `.ai-rc.json` does not set `generatedDir`, relative to the Vite root. */
 export const DEFAULT_GENERATED_DIR = '.ai-cache';
+/** Name of the TypeScript config file that must exist at the Vite root. */
 export const TSCONFIG_FILE = 'tsconfig.json';
+/** Name of the plugin config file that must exist at the Vite root. */
 export const AI_CONFIG_FILE = '.ai-rc.json';
+/** Plugin name reported to Vite and included in error messages. */
 export const VITE_PLUGIN_NAME = 'ai-compile-time';
+/** OpenAI Responses API endpoint. */
 export const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
+/** Timeout for each OpenAI request, in milliseconds. */
 export const OPENAI_TIMEOUT_MS = 60_000;
+/** Number of retries after the first OpenAI attempt fails. */
 export const OPENAI_MAX_RETRIES = 2;
+/** Base delay for exponential backoff between OpenAI retries, in milliseconds. */
 export const OPENAI_RETRY_BASE_DELAY_MS = 250;
+/** Upper bound on a server-requested `Retry-After` delay, in milliseconds. */
 export const OPENAI_MAX_RETRY_AFTER_MS = 10_000;
+/** Version of the generation format. Bump it to invalidate cached functions. */
 export const COMPILER_VERSION = 1;
+/** Prefix for the temporary directories used during validation. */
 export const GENERATED_FUNCTION_TEMP_PREFIX = 'ai-lambda-';
+/** File name of the temporary module that holds a generated function. */
 export const GENERATED_FUNCTION_FILE = 'generated.ts';
+/** Variable name that holds the generated function in the temporary module. */
 export const GENERATED_FUNCTION_VARIABLE = '__generated';
 
+// Prompt rules included in each method's spec. Shared rules are combined in COMMON_RULES.
 const NO_EXTERNAL_RULE = 'No external dependencies.';
 const NO_MUTATIONS_RULE = 'No mutations.';
 const NO_ADDITIONAL_STATEMENTS_RULE = 'No additional variables or statements.';
@@ -25,6 +40,7 @@ const NO_CASE_CONVERSION_RULE = 'Do not call toLowerCase or toUpperCase; only in
 const ROUNDING_RULE = 'Use arithmetic for numeric changes and Math.round, Math.floor or Math.ceil for rounding.';
 const STRING_CHECK_RULE = 'Use includes or localeCompare for string checks.';
 const SCHEMA_FIELDS_RULE = 'Only access fields defined in the supplied schema.';
+/** Rules that apply to every AI method. */
 const COMMON_RULES = [
   FULL_ARROW_RULE,
   NO_EXTERNAL_RULE,
@@ -33,8 +49,12 @@ const COMMON_RULES = [
   EXPRESSION_BODY_RULE,
   NO_CASE_CONVERSION_RULE
 ];
+/** Methods that the generated code may call on `Math` and on strings. */
 const MATH_STRING_METHODS = ['localeCompare', 'includes', 'round', 'floor', 'ceil'];
 
+/**
+ * Specs for each supported AI array method, keyed by source method name.
+ */
 export const aiFunctionSpecs: Record<string, AIFunctionSpec> = {
   sortAi: {
     kind: 'sort',
@@ -157,6 +177,9 @@ export const aiFunctionSpecs: Record<string, AIFunctionSpec> = {
   }
 };
 
+/**
+ * AST node kinds that generated code may contain. Anything else is rejected during validation.
+ */
 export const PERMITTED_SYNTAX_KINDS = new Set([
   SyntaxKind.ArrowFunction,
   SyntaxKind.Parameter,
@@ -182,12 +205,15 @@ export const PERMITTED_SYNTAX_KINDS = new Set([
   SyntaxKind.ConditionalExpression
 ]);
 
+/** `Math` methods that generated code may call for numeric rounding. */
 export const NUMERIC_METHODS = new Set(['round', 'floor', 'ceil']);
+/** Property names that generated code may not access, to block prototype manipulation. */
 export const PROTECTED_PROPERTIES = new Set([
   '__proto__',
   'prototype',
   'constructor'
 ]);
+/** Binary operators that generated code may use for arithmetic. */
 export const ARITHMETIC_OPERATORS = new Set([
   SyntaxKind.PlusToken,
   SyntaxKind.MinusToken,
@@ -196,6 +222,7 @@ export const ARITHMETIC_OPERATORS = new Set([
   SyntaxKind.SlashToken,
   SyntaxKind.PercentToken
 ]);
+/** Strict comparison operators that generated code may use. */
 export const COMPARISON_OPERATORS = new Set([
   SyntaxKind.LessThanToken,
   SyntaxKind.LessThanEqualsToken,

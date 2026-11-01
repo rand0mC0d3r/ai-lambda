@@ -18,6 +18,7 @@ import { translate } from './translations/en.js';
 import { transformModule } from './transform/transformModule.js';
 import type { AIConfig } from './types.js';
 
+/** Filter that selects JS and TS modules for transformation, skipping `node_modules` and virtual `\0` modules. */
 const shouldTransform = createFilter(/\.[jt]sx?$/, [/node_modules/, /\0/]);
 
 // Dev servers never run closeBundle, so their summary waits for AI activity to settle.
@@ -93,6 +94,9 @@ export function aiCompiler(): Plugin {
   let summarizedCalls = 0;
   let summaryTimer: ReturnType<typeof setTimeout> | undefined;
 
+  /**
+   * Logs the build summary if AI calls finished since the last summary.
+   */
   function logSummary(): void {
     clearTimeout(summaryTimer);
     summaryTimer = undefined;
@@ -106,12 +110,21 @@ export function aiCompiler(): Plugin {
     if (summary) logger.info(summary);
   }
 
+  /**
+   * Schedules a summary after the dev server has been quiet for a short period.
+   */
   function scheduleSummary(): void {
     clearTimeout(summaryTimer);
     summaryTimer = setTimeout(logSummary, DEV_SUMMARY_QUIET_MS);
     summaryTimer.unref();
   }
 
+  /**
+   * Returns the TypeScript API instance created in `configResolved`.
+   *
+   * @returns The active API.
+   * @throws {AIPluginError} When the API has not been initialized.
+   */
   function getApi(): API {
     if (!api) {
       throw new AIPluginError(translate('typescriptApiNotInitialized'), 'type_check');
@@ -120,6 +133,9 @@ export function aiCompiler(): Plugin {
     return api;
   }
 
+  /**
+   * Releases the TypeScript snapshot and API, if they exist.
+   */
   function disposeTypeScript(): void {
     initialSnapshot?.dispose();
     initialSnapshot = undefined;
@@ -131,11 +147,18 @@ export function aiCompiler(): Plugin {
     name: VITE_PLUGIN_NAME,
     enforce: 'pre',
 
+    /** Resets the per-build AI call report. */
     buildStart() {
       resetAiCallReport();
       summarizedCalls = 0;
     },
 
+    /**
+     * Loads `tsconfig.json` and `.ai-rc.json` from the resolved root and creates the TypeScript project.
+     *
+     * @param resolved The resolved Vite config.
+     * @throws {Error} A configuration error when either file is invalid or the TypeScript project cannot load.
+     */
     async configResolved(resolved) {
       root = resolved.root;
       logger = resolved.logger;
@@ -175,6 +198,14 @@ export function aiCompiler(): Plugin {
       }
     },
 
+    /**
+     * Rewrites AI array calls in a matching module. Files outside the JS/TS
+     * filter, including `node_modules`, are returned unchanged.
+     *
+     * @param source The module source.
+     * @param id The module's resolved file path.
+     * @returns The transformed code and source map, or `null` when nothing changed.
+     */
     async transform(source, id) {
       if (!shouldTransform(id)) return null;
 
@@ -193,6 +224,9 @@ export function aiCompiler(): Plugin {
       }
     },
 
+    /**
+     * Logs the final summary and, outside watch mode, releases the TypeScript API.
+     */
     closeBundle() {
       logSummary();
 
@@ -201,6 +235,9 @@ export function aiCompiler(): Plugin {
         disposeTypeScript();
       }
     },
+    /**
+     * Logs the final summary and releases the TypeScript API when the dev server stops.
+     */
     closeWatcher() {
       logSummary();
       disposeTypeScript();

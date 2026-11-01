@@ -1,3 +1,6 @@
+/**
+ * English message templates. Placeholders use the form `{{name}}` and are filled by {@link translate}.
+ */
 const english = {
   typescriptApiNotInitialized: 'TypeScript API is not initialized',
   unableToLoadTypeScriptProject: 'Unable to load TypeScript project {{tsconfigPath}}',
@@ -70,9 +73,23 @@ const english = {
   missingTransformHook: 'Plugin has no transform hook'
 } as const;
 
+/**
+ * A key of an English message template.
+ */
 type TranslationKey = keyof typeof english;
+/**
+ * Values used to fill `{{name}}` placeholders in a message template.
+ */
 type TranslationValues = Record<string, string | number>;
 
+/**
+ * Looks up a message template and fills in its placeholders.
+ * Placeholders without a matching value are left unchanged.
+ *
+ * @param key The message key.
+ * @param values Values for the placeholders.
+ * @returns The formatted message.
+ */
 export function translate(
   key: TranslationKey,
   values: TranslationValues = {}
