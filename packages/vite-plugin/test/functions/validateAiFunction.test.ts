@@ -318,5 +318,74 @@ describe('validateAiFunction', () => {
         check('(acc, item) => item.name', 'reduceAi', reducer, parameterSchemas)
       ).rejects.toThrow('does not match the declared types');
     });
+
+    it('accepts scalar mapper results that match the declared result type', async () => {
+      await check('(item) => item.price', 'mapAi', { parameters: { item: product }, result: 'number' });
+    });
+
+    it('checks Date fields in mapper results', async () => {
+      const dated = {
+        parameters: { item: '{ at: Date; }' },
+        result: '{ when: Date; }'
+      } as const;
+      const datedSchema = { at: 'date' };
+      const run = (code: string) => {
+        api?.close();
+        api = new API();
+        return validateAiFunction(code, datedSchema, aiFunctionSpecs.mapAi, api, undefined, dated);
+      };
+
+      await run('(item) => ({when: item.at})');
+      await expect(
+        run("(item) => ({when: 'now'})")
+      ).rejects.toThrow('does not match the declared types');
+    });
+
+    it('accepts omitting optional result fields and rejects null for non-nullable fields', async () => {
+      const optional = { parameters: { item: product }, result: '{ name?: string; }' } as const;
+      await check('(item) => ({})', 'mapAi', optional);
+
+      const required = { parameters: { item: product }, result: '{ name: string; }' } as const;
+      await expect(
+        check('(item) => ({name: null})', 'mapAi', required)
+      ).rejects.toThrow('does not match the declared types');
+    });
+
+    it('rejects nested objects that omit a declared nested field', async () => {
+      const nested = { parameters: { item: product }, result: '{ info: { label: string; }; }' } as const;
+
+      await expect(
+        check('(item) => ({info: {}})', 'mapAi', nested)
+      ).rejects.toThrow('does not match the declared types');
+    });
+
+    it('requires someAi and findAi predicates to return a boolean', async () => {
+      const predicate = { parameters: { item: product }, result: 'boolean' } as const;
+
+      await check('(item) => item.price > 10', 'someAi', predicate);
+      await expect(
+        check('(item) => item.name && item.price > 10', 'someAi', predicate)
+      ).rejects.toThrow('does not match the declared types');
+      await check('(item) => item.price > 10', 'findAi', predicate);
+      await expect(
+        check('(item) => item.price', 'findAi', predicate)
+      ).rejects.toThrow('does not match the declared types');
+    });
+
+    it('checks array accumulators against the declared array type', async () => {
+      const reducer = {
+        parameters: { acc: '(number)[]', item: product },
+        result: '(number)[]'
+      } as const;
+      const parameterSchemas = {
+        acc: { kind: 'scalar', type: 'number[]' },
+        item: { kind: 'object', fields: { price: 'number', name: 'string' } }
+      } as const;
+
+      await check('(acc, item) => [item.price]', 'reduceAi', reducer, parameterSchemas);
+      await expect(
+        check('(acc, item) => [item.name]', 'reduceAi', reducer, parameterSchemas)
+      ).rejects.toThrow('does not match the declared types');
+    });
   });
 });
