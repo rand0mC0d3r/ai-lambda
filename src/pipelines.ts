@@ -163,5 +163,9 @@ export const pipelines: Pipeline[] = [
   {
     label: 'Sort by id, then native reverse',
     run: () => cart.sortAi('Sort by id, lowest first.').toReversed()
+  },
+  {
+    label: 'Unsorted',
+    run: () => cart
   }
 ];
