@@ -154,3 +154,54 @@ Practical consequences:
 | [src/functions/validateAiFunction.ts](../src/functions/validateAiFunction.ts) | Validates generated functions: syntax, allowed methods, and result shape. |
 | [src/translations/en.ts](../src/translations/en.ts) | User-facing error messages. |
 | [src/errorContext.ts](../src/errorContext.ts) | Adds the `[ai-compile-time]` prefix and extra context to errors. |
+
+## 7. Compiler core, independent of Vite
+
+Only [src/aiCompiler.ts](../src/aiCompiler.ts) imports `vite`. The stages below run on a source string, a file name, a TypeScript project, and a config. They do not depend on Vite hooks, so another bundler or compiler integration can call the same core.
+
+```mermaid
+flowchart TD
+    A([Natural language<br/>literal string at the call site]) --> B[Instruction extraction and method selection<br/>aiFunctionSpecs lookup]
+    B --> C[TypeScript schema inference<br/>inferSchema, inferResultShape]
+    C --> D{Cache enabled and<br/>cache file exists?}
+    D -->|hit| H
+    D -->|miss| E[Prompt construction<br/>instruction, schema, parameters, rules]
+    E --> F[LLM generation<br/>OpenAI Responses API, JSON schema output]
+    F --> G[Generated expression<br/>arrow function source]
+    G --> H[AST validation<br/>syntax, arrow shape, allowed nodes and methods]
+    H --> I[Semantic and type validation<br/>schema-aware field and type checks, result shape]
+    I --> W{Freshly generated and<br/>cache enabled?}
+    W -->|yes| J[Cache write<br/>generatedDir/sha256.json]
+    W -->|no| K
+    J --> K[AST replacement and sourcemap<br/>MagicString method-tail overwrite, hires map]
+    K --> L([Native JavaScript])
+
+    style B fill:#dcfce7,stroke:#166534
+    style C fill:#dcfce7,stroke:#166534
+    style E fill:#dcfce7,stroke:#166534
+    style F fill:#dcfce7,stroke:#166534
+    style H fill:#dcfce7,stroke:#166534
+    style I fill:#dcfce7,stroke:#166534
+    style J fill:#dcfce7,stroke:#166534
+    style K fill:#dcfce7,stroke:#166534
+```
+
+Green nodes are bundler-independent. The diagram has no Vite-specific nodes.
+
+| Stage | Implementation | Notes |
+| --- | --- | --- |
+| Natural language input | Call-site `instruction` argument | Must be a string literal. The compiler reads it without running code. |
+| Instruction extraction and method selection | [src/transform/transformModule.ts](../src/transform/transformModule.ts), [src/constants.ts](../src/constants.ts) | Picks the spec (`sortAi`, `filterAi`, `mapAi`, `reduceAi`) by method name. The instruction is not parsed; it is passed to the LLM as text. |
+| TypeScript schema inference | [src/functions/inferSchema.ts](../src/functions/inferSchema.ts) | Uses the TypeScript checker to derive item fields, accumulator schema, and result shape. |
+| Cache lookup | [src/openai/generateAiFunction.ts](../src/openai/generateAiFunction.ts) | Key is a hash of instruction, schema, model, compiler version, and kind. A hit skips prompt, LLM, and cache write. |
+| Prompt construction | [src/openai/generateAiFunction.ts](../src/openai/generateAiFunction.ts) | Sends instruction, schema, parameter schemas, and the spec's rules. Array data is not sent. |
+| LLM generation | [src/openai/generateAiFunction.ts](../src/openai/generateAiFunction.ts), [src/openai/extractGeneratedText.ts](../src/openai/extractGeneratedText.ts) | Requests strict JSON output with one function field. |
+| Generated expression | Output field of the response | Parsed as a single arrow function. |
+| AST validation | [src/functions/validateAiFunction.ts](../src/functions/validateAiFunction.ts) | Parses the expression with the TypeScript API. Checks syntax, parameters, and an allowlist of node kinds, operators, and methods. |
+| Semantic and type validation | [src/functions/validateAiFunction.ts](../src/functions/validateAiFunction.ts) | Uses the inferred schema to check field access, numeric operators, and result fields. It does not run TypeScript's semantic diagnostics on the generated code. |
+| Cache write | [src/openai/generateAiFunction.ts](../src/openai/generateAiFunction.ts) | Runs only after a fresh generation passes validation. |
+| AST replacement and sourcemap | [src/transform/transformModule.ts](../src/transform/transformModule.ts) | Overwrites the method tail with `MagicString` and returns a hires source map. |
+
+### Boundary for future integrations
+
+[src/transform/transformModule.ts](../src/transform/transformModule.ts) is the closest thing to a core entry point, but it still has Vite-shaped inputs: it takes a module `id` and filters by file extension and `node_modules`. A second integration would need to pass in the source, file name, TypeScript API, tsconfig path, config, and root. Those inputs are not yet separated from Vite's hook arguments. Keeping that split in mind matters when adding another bundler.
