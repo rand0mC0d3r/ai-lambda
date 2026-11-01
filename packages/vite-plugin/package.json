@@ -26,7 +26,8 @@
     "prepack": "npm run build",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "bench": "vitest run --config vitest.bench.config.ts"
   },
   "peerDependencies": {
     "typescript": ">=7.0.2 <8.0.0",
@@ -35,6 +36,7 @@
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@vitest/coverage-v8": "^5.0.5",
+    "tinybench": "^6.2.3",
     "vitest": "^5.0.5"
   },
   "dependencies": {

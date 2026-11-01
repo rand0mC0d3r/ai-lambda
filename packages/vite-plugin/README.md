@@ -400,8 +400,12 @@ From this package directory (`packages/vite-plugin`):
 npm run build            # compile src/ to dist/ with tsc
 npm test                 # vitest run
 npm run test:coverage    # vitest run --coverage (HTML report in coverage/)
+npm run test:coverage    # vitest run --coverage (HTML report in coverage/)
+npm run bench            # run benchmarks in bench/ (tinybench, times are not CI gates)
 npm pack --dry-run       # inspect what will be published
 ```
+
+Benchmarks in `bench/` cover the warm-cache rebuild path (`transformModule`, with 1, 5, and 20 AI calls), the early return for modules without AI calls, `validateAiFunction`, and `extractGeneratedText`. They run through `vitest.bench.config.ts` and use [tinybench](https://github.com/tinylibs/tinybench) for sampling. Fetch is stubbed, so timings never include network calls. Vitest 5 no longer provides a `bench` API, so the timing is done by a `measure` helper.
 
 ### Project layout
 

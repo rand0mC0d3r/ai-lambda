@@ -1,3 +1,3 @@
 {
-  "mapper": "item => ({...item, unitPrice: Math.round(item.unitPrice * 0.9 * 100) / 100})"
+  "mapper": "(item) => ({...item, unitPrice: Math.round(item.unitPrice * 0.9 * 100) / 100})"
 }

@@ -1,3 +1,3 @@
 {
-  "comparator": "(a, b) => (b.quantity * b.unitPrice) - (a.quantity * a.unitPrice) || a.product.localeCompare(b.product, undefined, {numeric: true, sensitivity: 'base'})"
+  "comparator": "(a,b) => b.quantity * b.unitPrice - a.quantity * a.unitPrice || a.product.localeCompare(b.product, undefined, {numeric: true, sensitivity: 'base'})"
 }
