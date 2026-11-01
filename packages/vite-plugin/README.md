@@ -235,6 +235,8 @@ flowchart TD
 
 If generation or validation fails, the transform fails. The plugin never leaves an uncompiled AI call in the output.
 
+For a detailed diagram of where the plugin attaches to Vite's hooks and plugin order, see [docs/architecture.md](./docs/architecture.md).
+
 ## Caching
 
 Generated functions are stored as JSON files in `generatedDir`, named by a hash of:
