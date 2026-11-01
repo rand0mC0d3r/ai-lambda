@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import type { API } from 'typescript/unstable/sync';
 import path from 'node:path';
 import type { AIFunctionSpec } from '../aiFunctions.js';
 import { validateAiFunction } from '../comparator/validateAiFunction.js';
@@ -11,7 +12,8 @@ export async function generateAiFunction(
   root: string,
   spec: AIFunctionSpec,
   instruction: string,
-  schema: Record<string, string>
+  schema: Record<string, string>,
+  api: API
 ): Promise<string> {
   const cacheKey = hash(JSON.stringify({
     instruction,
@@ -47,7 +49,7 @@ export async function generateAiFunction(
         throw new Error(`Invalid cached ${spec.role}`);
       }
 
-      validateAiFunction(cachedFunction, schema, spec);
+      await validateAiFunction(cachedFunction, schema, spec, api);
       return cachedFunction;
     }
   }
@@ -128,7 +130,7 @@ ${spec.rules.map((rule) => `- ${rule}`).join('\n')}
     );
   }
 
-  validateAiFunction(generated, schema, spec);
+  await validateAiFunction(generated, schema, spec, api);
 
   if (config.cache) {
     await mkdir(cacheDir, { recursive: true });

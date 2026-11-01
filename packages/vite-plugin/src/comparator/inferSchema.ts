@@ -1,15 +1,20 @@
-import ts from 'typescript';
+import type { Expression } from 'typescript/unstable/ast';
+import {
+  TypeFlags,
+  type Checker
+} from 'typescript/unstable/sync';
 
 export function inferSchema(
-  checker: ts.TypeChecker,
-  items: ts.Expression,
+  checker: Checker,
+  items: Expression,
   method: string
 ): Record<string, string> {
   const itemsType = checker.getTypeAtLocation(items);
-  const itemType = checker.getIndexTypeOfType(
-    itemsType,
-    ts.IndexKind.Number
-  );
+  const numberIndex = itemsType &&
+    checker.getIndexInfosOfType(itemsType).find(
+      (index) => index.keyType.flags & TypeFlags.NumberLike
+    );
+  const itemType = numberIndex?.valueType;
 
   if (!itemType) {
     throw new Error(`${method}() items must be an array`);
@@ -18,23 +23,24 @@ export function inferSchema(
   const schema: Record<string, string> = {};
 
   for (const property of checker.getPropertiesOfType(itemType)) {
-    const propertyName = property.getName();
+    const propertyName = property.name;
     const propertyType = checker.getTypeOfSymbolAtLocation(
       property,
       items
     );
     const nonNullableType = checker.getNonNullableType(propertyType);
-    const variants = nonNullableType.isUnion()
-      ? nonNullableType.types
+    const variants = nonNullableType?.isUnionType()
+      ? nonNullableType.getTypes()
       : [nonNullableType];
     const fieldTypes = variants.map((type) => {
-      if (type.flags & ts.TypeFlags.StringLike) return 'string';
-      if (type.flags & ts.TypeFlags.NumberLike) return 'number';
-      if (type.flags & ts.TypeFlags.BooleanLike) return 'boolean';
+      if (!type) return undefined;
+      if (type.flags & TypeFlags.StringLike) return 'string';
+      if (type.flags & TypeFlags.NumberLike) return 'number';
+      if (type.flags & TypeFlags.BooleanLike) return 'boolean';
 
       if (
         type.getSymbol()?.name === 'Date' ||
-        type.aliasSymbol?.name === 'Date'
+        type.getAliasSymbol()?.name === 'Date'
       ) {
         return 'date';
       }

@@ -32,7 +32,7 @@ Register `aiCompiler()` in `vite.config.ts` and create an `.ai-rc.json` in the p
 
 ### Requirements
 
-- Node.js and npm (use a Node version supported by the installed Vite release).
+- Node.js `^20.19.0` or `>=22.12.0` and npm, as required by Vite 8.
 - An OpenAI API key.
 
 ### Install and configure

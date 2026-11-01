@@ -1,20 +1,33 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import ts from 'typescript';
 import type { Plugin } from 'vite';
+import type {
+  CallExpression,
+  Node,
+  PropertyAccessExpression
+} from 'typescript/unstable/ast';
+import {
+  isCallExpression,
+  isPropertyAccessExpression,
+  isStringLiteral
+} from 'typescript/unstable/ast/is';
+import {
+  API,
+  type Snapshot
+} from 'typescript/unstable/sync';
 import { inferSchema } from './comparator/inferSchema.js';
 import { aiFunctionSpecs } from './aiFunctions.js';
 import { generateAiFunction } from './openai/generateAiFunction.js';
 import type { AIConfig } from './types.js';
 
 function isAiCall(
-  node: ts.Node
-): node is ts.CallExpression & {
-  expression: ts.PropertyAccessExpression;
+  node: Node
+): node is CallExpression & {
+  expression: PropertyAccessExpression;
 } {
   return (
-    ts.isCallExpression(node) &&
-    ts.isPropertyAccessExpression(node.expression) &&
+    isCallExpression(node) &&
+    isPropertyAccessExpression(node.expression) &&
     Object.hasOwn(aiFunctionSpecs, node.expression.name.text)
   );
 }
@@ -22,7 +35,17 @@ function isAiCall(
 export function aiCompiler(): Plugin {
   let config: AIConfig;
   let root: string;
-  let tsconfig: ts.ParsedCommandLine;
+  let tsconfigPath: string;
+  let api: API | undefined;
+  let initialSnapshot: Snapshot | undefined;
+
+  function getApi(): API {
+    if (!api) {
+      throw new Error('TypeScript API is not initialized');
+    }
+
+    return api;
+  }
 
   return {
     name: 'ai-compile-time',
@@ -30,200 +53,193 @@ export function aiCompiler(): Plugin {
 
     async configResolved(resolved) {
       root = resolved.root;
+      tsconfigPath = path.resolve(root, 'tsconfig.json');
+      api = new API();
 
-      const tsconfigPath = path.resolve(root, 'tsconfig.json');
-      const tsconfigFile = ts.readConfigFile(
-        tsconfigPath,
-        ts.sys.readFile
-      );
+      try {
+        api.parseConfigFile(tsconfigPath);
+        initialSnapshot = api.updateSnapshot({
+          openProjects: [tsconfigPath]
+        });
 
-      if (tsconfigFile.error) {
-        throw new Error(
-          ts.flattenDiagnosticMessageText(
-            tsconfigFile.error.messageText,
-            '\n'
-          )
-        );
+        const project = initialSnapshot.getProject(tsconfigPath);
+
+        if (!project) {
+          throw new Error(`Unable to load TypeScript project ${tsconfigPath}`);
+        }
+
+        const diagnostics =
+          project.program.getConfigFileParsingDiagnostics();
+
+        if (diagnostics.length) {
+          throw new Error(
+            diagnostics.map((diagnostic) => diagnostic.text).join('\n')
+          );
+        }
+
+        const configPath = path.resolve(root, '.ai-rc.json');
+        config = JSON.parse(await readFile(configPath, 'utf8'));
+
+        if (!config.apiKey) {
+          throw new Error('Missing OpenAI API key in .ai-rc.json');
+        }
+
+        config.model ||= 'gpt-4.1-mini';
+        config.cache ??= true;
+        config.generatedDir ||= '.ai-cache';
+      } catch (error) {
+        initialSnapshot?.dispose();
+        api.close();
+        api = undefined;
+        throw error;
       }
-
-      tsconfig = ts.parseJsonConfigFileContent(
-        tsconfigFile.config,
-        ts.sys,
-        root,
-        undefined,
-        tsconfigPath
-      );
-
-      if (tsconfig.errors.length) {
-        throw new Error(
-          tsconfig.errors
-            .map((diagnostic) =>
-              ts.flattenDiagnosticMessageText(
-                diagnostic.messageText,
-                '\n'
-              )
-            )
-            .join('\n')
-        );
-      }
-
-      const configPath = path.resolve(root, '.ai-rc.json');
-
-      config = JSON.parse(
-        await readFile(configPath, 'utf8')
-      );
-
-      if (!config.apiKey) {
-        throw new Error('Missing OpenAI API key in .ai-rc.json');
-      }
-
-      config.model ||= 'gpt-4.1-mini';
-      config.cache ??= true;
-      config.generatedDir ||= '.ai-cache';
     },
 
     async transform(source, id) {
       if (
         id.includes('node_modules') ||
-        !/\.[jt]sx?$/.test(id)
+        !/\.[jt]sx?$/.test(id) ||
+        !Object.keys(aiFunctionSpecs).some((method) => source.includes(method))
       ) {
         return null;
       }
 
-      const ast = ts.createSourceFile(
-        id,
-        source,
-        ts.ScriptTarget.Latest,
-        true
-      );
+      const compilerApi = getApi();
 
-      let hasAiCall = false;
+      const snapshot = compilerApi.updateSnapshot({
+        fileChanges: { changed: [id] }
+      });
 
-      function findAiCall(node: ts.Node): void {
-        if (isAiCall(node)) {
-          hasAiCall = true;
-          return;
+      try {
+        const project = snapshot.getProject(tsconfigPath);
+        const programSource = project?.program.getSourceFile(id);
+
+        if (!project || !programSource) {
+          throw new Error(`Unable to type-check AI call in ${id}`);
         }
 
-        ts.forEachChild(node, findAiCall);
-      }
+        const activeProject = project;
 
-      findAiCall(ast);
-
-      if (!hasAiCall) return null;
-
-      const compilerHost = ts.createCompilerHost(tsconfig.options);
-      const getSourceFile = compilerHost.getSourceFile.bind(compilerHost);
-
-      compilerHost.getSourceFile = (
-        fileName,
-        languageVersionOrOptions,
-        onError,
-        shouldCreateNewSourceFile
-      ) => {
-        if (path.resolve(fileName) === path.resolve(id)) {
-          return ts.createSourceFile(
-            fileName,
-            source,
-            languageVersionOrOptions,
-            true
+        if (programSource.text !== source) {
+          throw new Error(
+            `Unable to type-check transformed AI call in ${id}: source does not match the TypeScript project`
           );
         }
 
-        return getSourceFile(
-          fileName,
-          languageVersionOrOptions,
-          onError,
-          shouldCreateNewSourceFile
-        );
-      };
+        let hasAiCall = false;
 
-      const program = ts.createProgram({
-        rootNames: tsconfig.fileNames,
-        options: tsconfig.options,
-        host: compilerHost
-      });
-      const programSource = program.getSourceFiles().find(
-        (file) => path.resolve(file.fileName) === path.resolve(id)
-      );
-
-      if (!programSource) {
-        throw new Error(`Unable to type-check AI call in ${id}`);
-      }
-
-      const checker = program.getTypeChecker();
-      const replacements: {
-        start: number;
-        end: number;
-        value: string;
-      }[] = [];
-
-      async function visit(node: ts.Node): Promise<void> {
-        if (isAiCall(node)) {
-          const spec = aiFunctionSpecs[node.expression.name.text];
-          const instructionNode = node.arguments[0];
-          const items = node.expression.expression;
-
-          if (
-            !instructionNode ||
-            !ts.isStringLiteral(instructionNode) ||
-            node.arguments.length !== 1 ||
-            (node.typeArguments && spec.kind !== 'map')
-          ) {
-            throw new Error(
-              `Invalid ${spec.method}() invocation in ${id}`
-            );
+        function findAiCall(node: Node): void {
+          if (isAiCall(node)) {
+            hasAiCall = true;
+            return;
           }
 
-          const schema = inferSchema(checker, items, spec.method);
+          node.forEachChild(findAiCall);
+        }
 
-          const generated = await generateAiFunction(
-            config,
-            root,
-            spec,
-            instructionNode.text,
-            schema
-          );
+        findAiCall(programSource);
 
-          // Only the method tail is replaced so nested AI calls in the receiver stay intact.
-          const typeArguments = node.typeArguments
-            ? `<${node.typeArguments.map((type) => type.getText(ast)).join(', ')}>`
-            : '';
+        if (!hasAiCall) return null;
 
-          replacements.push({
-            start: items.end,
-            end: node.end,
-            value: `.${spec.replacementMethod}${typeArguments}(${generated})`
+        const replacements: {
+          start: number;
+          end: number;
+          value: string;
+        }[] = [];
+
+        async function visit(node: Node): Promise<void> {
+          if (isAiCall(node)) {
+            const spec = aiFunctionSpecs[node.expression.name.text];
+            const instructionNode = node.arguments[0];
+            const items = node.expression.expression;
+
+            if (
+              !instructionNode ||
+              !isStringLiteral(instructionNode) ||
+              node.arguments.length !== 1 ||
+              (node.typeArguments && spec.kind !== 'map')
+            ) {
+              throw new Error(
+                `Invalid ${spec.method}() invocation in ${id}`
+              );
+            }
+
+            const schema = inferSchema(
+              activeProject.checker,
+              items,
+              spec.method
+            );
+
+            const generated = await generateAiFunction(
+              config,
+              root,
+              spec,
+              instructionNode.text,
+              schema,
+              compilerApi
+            );
+
+            const typeArguments = node.typeArguments
+              ? `<${node.typeArguments.map((type) => type.getText(programSource)).join(', ')}>`
+              : '';
+
+            // Rewrite only the method tail so nested receiver calls stay intact.
+            replacements.push({
+              start: items.end,
+              end: node.end,
+              value: `.${spec.replacementMethod}${typeArguments}(${generated})`
+            });
+
+            await visit(items);
+            return;
+          }
+
+          const children: Node[] = [];
+          node.forEachChild((child) => {
+            children.push(child);
           });
 
-          await visit(items);
-          return;
+          for (const child of children) {
+            await visit(child);
+          }
         }
 
-        for (const child of node.getChildren(ast)) {
-          await visit(child);
+        await visit(programSource);
+
+        if (!replacements.length) return null;
+
+        let output = source;
+
+        for (const replacement of replacements.sort(
+          (a, b) => b.start - a.start
+        )) {
+          output =
+            output.slice(0, replacement.start) +
+            replacement.value +
+            output.slice(replacement.end);
         }
+
+        return {
+          code: output,
+          map: null
+        };
+      } finally {
+        snapshot.dispose();
       }
+    },
 
-      await visit(programSource);
+    closeBundle() {
+      initialSnapshot?.dispose();
+      initialSnapshot = undefined;
+      api?.close();
+      api = undefined;
+    },
 
-      if (!replacements.length) return null;
-
-      let output = source;
-
-      for (const replacement of replacements.sort(
-        (a, b) => b.start - a.start
-      )) {
-        output =
-          output.slice(0, replacement.start) +
-          replacement.value +
-          output.slice(replacement.end);
-      }
-
-      return {
-        code: output,
-        map: null
-      };
+    closeWatcher() {
+      initialSnapshot?.dispose();
+      initialSnapshot = undefined;
+      api?.close();
+      api = undefined;
     }
   };
 }

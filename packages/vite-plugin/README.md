@@ -8,8 +8,9 @@ application bundle, so the browser does not call an AI service at runtime.
 ## Requirements
 
 - Vite 6 or later.
-- TypeScript 5 or later, installed in the Vite project. The plugin uses the
-  project's `tsconfig.json` to infer array item types.
+- TypeScript 7.0.2 through 7.x, installed in the Vite project. The plugin uses
+  TypeScript's unstable synchronous compiler API and the project's
+  `tsconfig.json` to infer array item types.
 - An OpenAI API key and network access when a matching operation needs to be
   generated.
 
