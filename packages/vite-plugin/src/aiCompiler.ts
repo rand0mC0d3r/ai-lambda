@@ -154,7 +154,12 @@ export function aiCompiler(): Plugin {
       );
     },
 
-    closeBundle: disposeTypeScript,
+    closeBundle() {
+      // Watch builds call closeBundle after every rebuild, so keep the API alive.
+      if (!this.meta.watchMode) {
+        disposeTypeScript();
+      }
+    },
     closeWatcher: disposeTypeScript
   };
 }

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { aiCompiler } from '../src/aiCompiler.js';
 import {
+  callCloseBundle,
   callConfigResolved,
   callTransform,
   createProject
@@ -42,6 +43,26 @@ describe('aiCompiler', () => {
         callConfigResolved(aiCompiler(), project.root)
       ).rejects.toThrow('Failed to initialize');
     } finally {
+      await project.cleanup();
+    }
+  });
+
+  it('keeps the TypeScript API alive across watch-mode rebuilds', async () => {
+    const project = await createProject('const value = 1;');
+    const plugin = aiCompiler();
+    await callConfigResolved(plugin, project.root);
+
+    try {
+      callCloseBundle(plugin, true);
+      await expect(
+        callTransform(
+          plugin,
+          "const result = items.sortAi('ascending');",
+          '/project/other.ts'
+        )
+      ).rejects.not.toThrow('TypeScript API is not initialized');
+    } finally {
+      callCloseBundle(plugin);
       await project.cleanup();
     }
   });

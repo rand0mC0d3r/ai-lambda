@@ -45,6 +45,15 @@ export async function callConfigResolved(
   await handler.call(plugin, { root } as ResolvedConfig);
 }
 
+export function callCloseBundle(plugin: Plugin, watchMode = false): void {
+  const hook = plugin.closeBundle;
+
+  if (!hook) return;
+
+  const handler = typeof hook === 'function' ? hook : hook.handler;
+  handler.call({ meta: { watchMode } } as never);
+}
+
 export async function callTransform(
   plugin: Plugin,
   source: string,

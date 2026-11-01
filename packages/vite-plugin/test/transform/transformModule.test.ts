@@ -3,6 +3,7 @@ import { aiCompiler } from '../../src/aiCompiler.js';
 import * as generation from '../../src/openai/generateAiFunction.js';
 import { aiFunctionSpecs } from '../../src/constants.js';
 import {
+  callCloseBundle,
   callConfigResolved,
   callTransform,
   createProject
@@ -87,7 +88,7 @@ const result = products
         undefined
       );
     } finally {
-      plugin.closeBundle?.call(plugin);
+      callCloseBundle(plugin);
       await cleanup();
     }
   });
@@ -191,7 +192,7 @@ const summary = products.reduceAi<Summary>('summary', { total: 0, label: '' });
         }
       );
     } finally {
-      plugin.closeBundle?.call(plugin);
+      callCloseBundle(plugin);
       await cleanup();
     }
   });
@@ -212,7 +213,7 @@ const result = products['sortAi']('price');
     try {
       expect(await callTransform(plugin, source, sourcePath)).toBeNull();
     } finally {
-      plugin.closeBundle?.call(plugin);
+      callCloseBundle(plugin);
       await cleanup();
     }
   });
@@ -233,7 +234,7 @@ const result = products['sortAi']('price');
           'Invalid'
         );
       } finally {
-        plugin.closeBundle?.call(plugin);
+        callCloseBundle(plugin);
         await cleanup();
       }
     }
@@ -256,7 +257,7 @@ const result = items.filterAi('keep');
         callTransform(plugin, source.replace('keep', 'different'), sourcePath)
       ).rejects.toThrow('source does not match the TypeScript project');
     } finally {
-      plugin.closeBundle?.call(plugin);
+      callCloseBundle(plugin);
       await cleanup();
     }
   });
@@ -287,7 +288,7 @@ const result = products.filterAi('keep active items');
         'Insight: The generated function did not meet the plugin’s validation rules'
       );
     } finally {
-      plugin.closeBundle?.call(plugin);
+      callCloseBundle(plugin);
       await cleanup();
     }
   });

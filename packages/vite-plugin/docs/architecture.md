@@ -37,7 +37,7 @@ The plugin uses four hooks. Blue nodes in the diagram are plugin hooks.
 | --- | --- | --- |
 | `configResolved` | Once, after the Vite config is resolved | Parses the tsconfig through the TypeScript API, builds the program snapshot, reads `.ai-rc.json`, requires `apiKey`, and applies defaults (`gpt-4.1-mini`, `cache: true`, `.ai-cache`). |
 | `transform` | Once per module (build) or once per request (dev) | Rewrites `sortAi`, `filterAi`, `mapAi`, and `reduceAi` call sites in TypeScript source files. See section 2. |
-| `closeBundle` | Once, at the end of `vite build` | Disposes the TypeScript snapshot and closes the TypeScript API. |
+| `closeBundle` | Once, at the end of `vite build` (skipped in watch builds, which reuse the API across rebuilds) | Disposes the TypeScript snapshot and closes the TypeScript API. |
 | `closeWatcher` | When the dev server closes | Same cleanup as `closeBundle`. |
 
 ## 2. Per-module transform flow
