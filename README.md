@@ -174,6 +174,8 @@ instruction is more convenient. Calls in a chain run from left to right.
 
 For example, these native callbacks filter and sort with ordinary JavaScript:
 
+![Native ES6 arrow functions filtering and sorting cart items](./docs/images/native-arrow-functions.png)
+
 ```ts
 const inStock = cart.filter((item) => item.inStock);
 
@@ -184,6 +186,8 @@ const biggestLinesFirst = inStock.toSorted(
 
 The same values can flow through native arrow callbacks and AI-powered
 operations in one pipeline:
+
+![Native ES6 callbacks interleaved with AI-powered array operations](./docs/images/mixed-ai-native-pipeline.png)
 
 ```ts
 const saleItems = cart
@@ -297,6 +301,7 @@ Generated code is restricted to simple expression-bodied arrow functions and sch
 | [`packages/vite-plugin/src/openai/`](./packages/vite-plugin/src/openai/) | Requests and extracts generated functions |
 | [`packages/vite-plugin/src/comparator/`](./packages/vite-plugin/src/comparator/) | Infers schemas and validates generated functions |
 | [`packages/vite-plugin/README.md`](./packages/vite-plugin/README.md) | Install and configure the reusable package |
+| [`docs/images/`](./docs/images/) | GitHub-themed code examples for this README |
 | [`src/ai-macros.d.ts`](./src/ai-macros.d.ts) | Declares the AI methods for TypeScript |
 | [`src/pipelines.ts`](./src/pipelines.ts) | Demo pipelines with AI and native array methods |
 | [`src/cart.ts`](./src/cart.ts) | Sample typed cart data |
