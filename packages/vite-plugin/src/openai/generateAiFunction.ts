@@ -9,7 +9,7 @@ import {
   COMPILER_VERSION,
   OPENAI_RESPONSES_URL
 } from '../constants.js';
-import { validateAiFunction } from '../comparator/validateAiFunction.js';
+import { validateAiFunction } from '../functions/validateAiFunction.js';
 import type { AIConfig } from '../types.js';
 import { hash, isRecord } from '../utils.js';
 import { extractGeneratedText } from './extractGeneratedText.js';

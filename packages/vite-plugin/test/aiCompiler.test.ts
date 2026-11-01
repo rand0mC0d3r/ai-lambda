@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { aiCompiler } from '../src/aiCompiler.js';
 import * as generation from '../src/openai/generateAiFunction.js';
 import { aiFunctionSpecs } from '../src/constants.js';
@@ -309,6 +311,19 @@ const result = products.filterAi('keep active items');
     await expect(
       callTransform(plugin, `${methods} products.sortAi('price')`, '/project/test.ts')
     ).rejects.toThrow('TypeScript API is not initialized');
+  });
+
+  it('reports TypeScript configuration diagnostics', async () => {
+    const project = await createProject(`${methods} const x = 1;`);
+
+    try {
+      await writeFile(path.join(project.root, 'tsconfig.json'), '{ invalid');
+      await expect(
+        callConfigResolved(aiCompiler(), project.root)
+      ).rejects.toThrow('Failed to initialize');
+    } finally {
+      await project.cleanup();
+    }
   });
 
   it('releases the TypeScript API on watcher shutdown', async () => {

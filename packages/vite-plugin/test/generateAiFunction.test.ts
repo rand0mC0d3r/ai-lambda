@@ -8,7 +8,7 @@ import { hash } from '../src/utils.js';
 import type { AIConfig } from '../src/types.js';
 import { generateAiFunction } from '../src/openai/generateAiFunction.js';
 
-vi.mock('../src/comparator/validateAiFunction.js', () => ({
+vi.mock('../src/functions/validateAiFunction.js', () => ({
   validateAiFunction: vi.fn()
 }));
 

@@ -9,10 +9,11 @@ export default defineConfig({
     coverage: {
       include: [
         'src/aiCompiler.ts',
-        'src/comparator/inferSchema.ts',
-        'src/comparator/validateAiFunction.ts',
+        'src/functions/inferSchema.ts',
+        'src/functions/validateAiFunction.ts',
         'src/openai/extractGeneratedText.ts',
         'src/openai/generateAiFunction.ts',
+        'src/transform/transformModule.ts',
         'src/utils.ts'
       ],
       reporter: ['text', 'html'],
