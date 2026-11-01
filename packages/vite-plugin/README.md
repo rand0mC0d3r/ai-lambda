@@ -121,6 +121,8 @@ Create `.ai-rc.json` in the resolved Vite root (the `root` option, or the direct
 
 Only `apiKey` is required. The key is read only from `.ai-rc.json`; there is no environment-variable fallback.
 
+The file is validated at startup. The plugin fails the build if the file is not a JSON object, contains keys other than the four above (so typos are caught), or has a value of the wrong type. `generatedDir` must be a relative path that stays inside the Vite root.
+
 ## Usage
 
 Every instruction **must be a string literal**. Methods chain with each other and with native array methods.

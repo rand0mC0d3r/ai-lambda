@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   API,
@@ -7,11 +6,10 @@ import {
 import type { Plugin } from 'vite';
 import {
     AI_CONFIG_FILE,
-    DEFAULT_GENERATED_DIR,
-    DEFAULT_MODEL,
     TSCONFIG_FILE,
     VITE_PLUGIN_NAME
 } from './constants.js';
+import { readAiConfig } from './config.js';
 import { createConfigurationError } from './errorContext.js';
 import { translate } from './translations/en.js';
 import { transformModule } from './transform/transformModule.js';
@@ -128,15 +126,7 @@ export function aiCompiler(): Plugin {
         }
 
         const configPath = path.resolve(root, AI_CONFIG_FILE);
-        config = JSON.parse(await readFile(configPath, 'utf8'));
-
-        if (!config.apiKey) {
-          throw new Error(translate('missingApiKey'));
-        }
-
-        config.model ||= DEFAULT_MODEL;
-        config.cache ??= true;
-        config.generatedDir ||= DEFAULT_GENERATED_DIR;
+        config = await readAiConfig(configPath, root);
       } catch (error) {
         disposeTypeScript();
         throw createConfigurationError(error, root);
